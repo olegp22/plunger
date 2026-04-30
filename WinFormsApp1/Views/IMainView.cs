@@ -1,10 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿namespace Plunger.Views;
 
-namespace WinFormsApp1.Views
+public interface IMainView
 {
-    internal interface IMainView
-    {
-    }
+    // Событие, которое форма будет "поднимать" при каждом тике таймера
+    event Action TimerTick;
+
+    // Метод для принудительной перерисовки экрана
+    void RefreshView();
+
+    // Метод для обновления текста счета на форме
+    void UpdateScore(int score);
 }

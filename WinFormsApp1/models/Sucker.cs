@@ -44,10 +44,9 @@ public class Sucker
         Condition = Condition.Death;
     }
 
-    public Rectangle GetBounds(int w, int h)
+    public Plunger.Models.Common.Rectangle GetBounds(int w, int h)
     {
-        // Передаем текущие координаты и размеры спрайта
-        return new Rectangle(Location.X, Location.Y, w, h);
+        return new Plunger.Models.Common.Rectangle(Location.X, Location.Y, w, h);
     }
 
     public void Die() { this.Condition = Condition.Death; }

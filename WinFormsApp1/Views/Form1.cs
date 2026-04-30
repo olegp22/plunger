@@ -1,4 +1,8 @@
-﻿using Plunger.Views;
+﻿namespace WinFormsApp1;
+
+
+
+using Plunger.Views;
 
 public partial class Form1 : Form, IMainView
 {
@@ -28,5 +32,10 @@ public partial class Form1 : Form, IMainView
     {
         // Здесь мы будем рисовать игрока и монетки через e.Graphics
         // Но для этого Презентер должен как-то передать данные
+    }
+
+    private void Form1_Load(object sender, EventArgs e)
+    {
+
     }
 }
