@@ -14,6 +14,8 @@ public record Point(int X = 0, int Y = 0)
         return other != null && X == other.X && Y == other.Y;
     }
 
+    public override int GetHashCode() => HashCode.Combine(X, Y);
+
     public bool IsNull
         => X == -1 && Y == -1;
 

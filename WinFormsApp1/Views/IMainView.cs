@@ -1,4 +1,6 @@
-﻿namespace Plunger.Views;
+﻿using Plunger.Models;
+
+namespace Plunger.Views;
 
 public interface IMainView
 {
@@ -12,4 +14,7 @@ public interface IMainView
 
     // Метод для обновления текста счета на форме
     void UpdateScore(int score);
+
+    //Презентер передаст сюда данные для отрисовки
+    void SetGameData(Sucker player, List<Coin> coins);
 }

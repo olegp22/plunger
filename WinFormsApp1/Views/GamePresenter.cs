@@ -1,5 +1,5 @@
-﻿using Plunger; // Чтобы видеть Sucker, Point и Condition
-using Plunger.Models; // Чтобы видеть Coin
+﻿using Plunger; 
+using Plunger.Models; 
 using Plunger.Models.Common;
 using Plunger.Views;
 namespace Plunger.Presenters;
@@ -16,6 +16,8 @@ public class GamePresenter
         _view = view;
         _player = player;
         _coins = coins;
+
+        _view.SetGameData(_player, _coins);
         _view.KeyPressed += OnKeyPressed;
         // Подписываемся на тик таймера формы
         _view.TimerTick += OnTimerTick;
@@ -39,18 +41,17 @@ public class GamePresenter
 
     
 
-// И создай сам метод обработки:
-private void OnKeyPressed(Keys key)
+    private void OnKeyPressed(Keys key)
     {
         switch (key)
         {
-            case Keys.W:
+            case Keys.A:
                 _player.AimUp(); // Поворачиваем прицел вверх
                 break;
-            case Keys.S:
+            case Keys.D:
                 _player.AimDown(); // Поворачиваем прицел вниз
                 break;
-            case Keys.Enter:
+            case Keys.W:
                 _player.Shoot(); // Запускаем присоску по текущему углу
                 break;
             case Keys.Space:
