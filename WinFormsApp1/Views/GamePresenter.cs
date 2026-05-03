@@ -16,23 +16,12 @@ public class GamePresenter
         _view = view;
         _player = player;
         _coins = coins;
-
+        _view.KeyPressed += OnKeyPressed;
         // Подписываемся на тик таймера формы
         _view.TimerTick += OnTimerTick;
     }
 
-    private void OnTimerTick()
-    {
-        // 1. Двигаем игрока (deltaTime пока упростим до 1)
-        _player.UpdatePosition(1.0);
-
-        // 2. Проверяем столкновения с монетками
-        CheckCoinCollisions();
-
-        // 3. Просим форму обновиться
-        _view.RefreshView();
-        _view.UpdateScore(_player.CoinsCollected);
-    }
+  
 
     private void CheckCoinCollisions()
     {
@@ -46,5 +35,47 @@ public class GamePresenter
                 _player.AddCoin();
             }
         }
+    }
+
+    
+
+// И создай сам метод обработки:
+private void OnKeyPressed(Keys key)
+    {
+        switch (key)
+        {
+            case Keys.W:
+                _player.AimUp(); // Поворачиваем прицел вверх
+                break;
+            case Keys.S:
+                _player.AimDown(); // Поворачиваем прицел вниз
+                break;
+            case Keys.Enter:
+                _player.Shoot(); // Запускаем присоску по текущему углу
+                break;
+            case Keys.Space:
+                _player.Detach(); // Отцепляемся и переходим в падение
+                break;
+        }
+    }
+
+    private void OnTimerTick()
+    {
+        // 1. Двигаем присоску, если она запущена
+        if (_player.Projectile.IsActive)
+        {
+            _player.Projectile.Update();
+
+            // Здесь можно добавить проверку: если присоска попала в объект, 
+            // переводим игрока в состояние Condition.Attached
+        }
+
+        // 2. Двигаем игрока (теперь его UpdatePosition учитывает подтягивание)
+        _player.UpdatePosition(1.0);
+
+        // 3. Проверяем монетки и обновляем экран
+        CheckCoinCollisions();
+        _view.RefreshView();
+        _view.UpdateScore(_player.CoinsCollected);
     }
 }

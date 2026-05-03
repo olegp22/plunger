@@ -18,6 +18,8 @@ public class PlungerProjectile
 
     private const int Size = 15;
 
+
+    //запуск присоски
     public void Launch(Point startLocation, double angleInDegrees)
     {
         _exactX = startLocation.X;

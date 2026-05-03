@@ -7,7 +7,15 @@ using Plunger.Views;
 public partial class Form1 : Form, IMainView
 {
     public event Action TimerTick;
+    public event Action<Keys>? KeyPressed;
 
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        // Отправляем информацию о нажатой клавише в Презентер
+        KeyPressed?.Invoke(e.KeyCode);
+    }
     public Form1()
     {
         InitializeComponent();

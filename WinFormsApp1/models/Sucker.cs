@@ -80,4 +80,14 @@ public class Sucker
             Location += new Point(0, Speed / 2); // Простая гравитация
         }
     }
+
+    public void AddCoin()
+    {
+        CoinsCollected++;
+    }
+
+    public Rectangle GetBounds(int w, int h)
+    {
+        return new Rectangle(Location.X, Location.Y, w, h);
+    }
 }
