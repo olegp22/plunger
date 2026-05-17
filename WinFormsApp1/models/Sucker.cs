@@ -18,20 +18,26 @@ public class Sucker
     public PlungerProjectile Projectile { get; private set; }
 
     // ── Tuneable constants ───────────────────────────────────────────────────
-    // Horizontal run speed (pixels/tick)
-    private const int HorizontalRunSpeed = 5;
+    // Horizontal run speed (pixels/tick) — increased for snappier feel
+    private const int HorizontalRunSpeed = 9;
 
     // Vertical pull speed = 2× horizontal run speed (requirement)
     private const int VerticalPullSpeed = HorizontalRunSpeed * 2;
+
+    // Fall speed after detach — matches the vertical pull speed so it feels consistent
+    private const int FallSpeed = VerticalPullSpeed; // 18 px/tick
 
     // Max distance (px) the plunger may travel before auto-returning
     private const double MaxProjectileRange = 900;
 
     // Ceiling Y boundary (pixels from top of world)
-    public const int CeilingY = 28; // 5% of 558 ≈ 28 px  — kept in sync with Form1
+    public const int CeilingY = 28; // 5% of 558 ≈ 28 px — kept in sync with Form1
 
-    // Floor Y boundary
-    public const int FloorY = 530;  // 558 - 28
+    // Sprite height used to align the bottom of the digger's feet to the floor boundary
+    public const int SpriteHeight = 150;
+
+    // Floor Y: bottom boundary minus the sprite height so feet touch the line, not the head
+    public const int FloorY = 530 - SpriteHeight; // character bottom aligns to floor bar
 
     // ────────────────────────────────────────────────────────────────────────
 
@@ -154,10 +160,11 @@ public class Sucker
 
     private void UpdateFall()
     {
-        // Simple gravity; half the run speed downward
-        Location += new Point(HorizontalRunSpeed, HorizontalRunSpeed / 2);
+        // Fall horizontally with run speed, vertically with FallSpeed (= pull speed)
+        Location += new Point(HorizontalRunSpeed, FallSpeed);
 
-        // Land on floor
+        // Land: Y is the top of the sprite; feet are at Y + SpriteHeight.
+        // Clamp so feet never pass the floor boundary.
         if (Location.Y >= FloorY)
         {
             Location = new Point(Location.X, FloorY);
