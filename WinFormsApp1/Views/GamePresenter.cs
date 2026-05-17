@@ -1,9 +1,9 @@
-﻿using Plunger; 
-using Plunger.Models; 
+using Plunger;
+using Plunger.Models;
 using Plunger.Models.Common;
 using Plunger.Views;
-namespace Plunger.Presenters;
 
+namespace Plunger.Presenters;
 
 public class GamePresenter
 {
@@ -11,6 +11,7 @@ public class GamePresenter
     private readonly Sucker _player;
     private readonly List<Coin> _coins;
 
+    // ── Constructor ──────────────────────────────────────────────────────────
     public GamePresenter(IMainView view, Sucker player, List<Coin> coins)
     {
         _view = view;
@@ -19,14 +20,37 @@ public class GamePresenter
 
         _view.SetGameData(_player, _coins);
         _view.KeyPressed += OnKeyPressed;
-        // Подписываемся на тик таймера формы
         _view.TimerTick += OnTimerTick;
     }
 
+    // ── Game loop tick ───────────────────────────────────────────────────────
+    private void OnTimerTick()
+    {
+        // UpdatePosition handles ALL physics internally:
+        //   • projectile flight + ceiling attach check
+        //   • out-of-range auto-return (no freeze)
+        //   • pull physics toward plunger
+        //   • auto-detach when digger reaches plunger
+        //   • floor landing
+        //   • somersault flag
+        _player.UpdatePosition(1.0);
 
+        // Coins are only collected by the digger's body — the projectile is excluded.
+        CheckCoinCollisions();
+
+        _view.UpdateScore(_player.CoinsCollected);
+        _view.RefreshView();
+    }
+
+    // ── Coin collision ───────────────────────────────────────────────────────
+    /// <summary>
+    /// Coins are collected ONLY when the digger's 120×120 body hitbox intersects them.
+    /// The flying plunger is strictly ignored here (requirement).
+    /// </summary>
     private void CheckCoinCollisions()
     {
-        // Указываем реальный визуальный размер 120x120 для проверки столкновений
+        // Sprite is drawn at 120 px wide, 150 px tall; use the same width for the hitbox.
+        // Using 120×120 centres the hitbox on the upper body as the requirement states.
         var playerBounds = _player.GetBounds(120, 120);
 
         foreach (var coin in _coins)
@@ -39,55 +63,23 @@ public class GamePresenter
         }
     }
 
-    private void OnTimerTick()
-    {
-        if (_player.Projectile.IsActive)
-        {
-            _player.Projectile.Update();
-
-            // ЛОГИКА "ПОТОЛКА": если присоска улетела выше Y=100, она прилипает
-            if (_player.Projectile.Location.Y < 100)
-            {
-                // Здесь мы вручную меняем состояние игрока на Attached через рефлексию 
-                // или просто добавив публичный сеттер в Sucker.cs для Condition
-                // Для простоты предположим, что у вас есть доступ:
-                // _player.SetAttached(); // Рекомендую добавить такой метод в Sucker.cs
-            }
-
-            // Если улетела слишком далеко (за экран) — сбрасываем
-            if (_player.Projectile.Location.X > 2000 || _player.Projectile.Location.X < -500 ||
-                _player.Projectile.Location.Y > 1000 || _player.Projectile.Location.Y < -500)
-            {
-                _player.Projectile.Stop();
-            }
-        }
-
-        _player.UpdatePosition(1.0);
-        CheckCoinCollisions();
-        _view.RefreshView();
-        _view.UpdateScore(_player.CoinsCollected);
-    }
-    
-
-    
-
+    // ── Input handling ───────────────────────────────────────────────────────
     private void OnKeyPressed(Keys key)
     {
         switch (key)
         {
             case Keys.A:
-                _player.AimUp(); // Поворачиваем прицел вверх
+                _player.AimUp();        // Rotate aim upward (negative Y in screen space)
                 break;
             case Keys.D:
-                _player.AimDown(); // Поворачиваем прицел вниз
+                _player.AimDown();      // Rotate aim downward
                 break;
             case Keys.W:
-                _player.Shoot(); // Запускаем присоску по текущему углу
+                _player.Shoot();        // Fire plunger / cancel in-flight / detach if attached
                 break;
             case Keys.Space:
-                _player.Detach(); // Отцепляемся и переходим в падение
+                _player.Detach();       // Force-detach while hanging
                 break;
         }
     }
-
 }
