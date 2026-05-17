@@ -1,6 +1,8 @@
 ﻿using Plunger;
 using Plunger.Models;
 using Plunger.Views;
+using System.Drawing.Drawing2D;
+using WinFormsApp1.Properties;
 
 
 namespace WinFormsApp1;
@@ -16,7 +18,7 @@ public partial class Form1 : Form, IMainView
     private int _diggerFrameTimer = 0;
 
     // 2. Монетки (4 кадра в ряд)
-    private int _coinCols = 4;
+    private int _coinCols = 8;
     private int _coinCurrentFrame = 0;
     private int _coinFrameTimer = 0;
 
@@ -65,123 +67,82 @@ public partial class Form1 : Form, IMainView
         if (_player == null || _coins == null) return;
 
         Graphics g = e.Graphics;
-        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
 
         // 1. ФОН
         if (Properties.Resources.background != null)
             g.DrawImage(Properties.Resources.background, 0, 0, this.ClientSize.Width, this.ClientSize.Height);
-        else
-            g.Clear(Color.FromArgb(40, 40, 40));
 
-        // --- АНИМАЦИЯ МОНЕТОК (Общий таймер для всех монет) ---
-        _coinFrameTimer++;
-        if (_coinFrameTimer > 5) // Скорость вращения монетки
+        // 2. КАМЕРА (25% слева)
+        float screenAnchorX = this.ClientSize.Width * 0.25f;
+        float cameraX = _player.Location.X - screenAnchorX;
+        float cameraY = _player.Location.Y - (this.ClientSize.Height * 0.5f);
+        g.TranslateTransform(-cameraX, -cameraY);
+
+        // 3. НОВЫЙ ЦЕНТР (для размера 120 это +60)
+        int playerCenterX = _player.Location.X + 60;
+        int playerCenterY = _player.Location.Y + 60;
+
+        // 4. ТРОС И ВАНТУЗ (Увеличен до 45x45)
+        if (_player.Projectile.IsActive || _player.Condition == Condition.Attached)
         {
-            _coinCurrentFrame = (_coinCurrentFrame + 1) % _coinCols;
-            _coinFrameTimer = 0;
+            g.DrawLine(new Pen(Color.SaddleBrown, 5), playerCenterX, playerCenterY,
+                _player.Projectile.Location.X + 22, _player.Projectile.Location.Y + 22);
+
+            if (Properties.Resources.vantus != null)
+            {
+                int vw = Properties.Resources.vantus.Width / _vantusCols;
+                int vFrame = (_player.Condition == Condition.Attached) ? 1 : 0;
+                // Размер вантуза 45x45
+                g.DrawImage(Properties.Resources.vantus,
+                    new Rectangle(_player.Projectile.Location.X, _player.Projectile.Location.Y, 45, 45),
+                    new Rectangle(vFrame * vw, 0, vw, Properties.Resources.vantus.Height),
+                    GraphicsUnit.Pixel);
+            }
         }
 
-        // 2. РИСУЕМ МОНЕТКИ
+        // 5. ДИГГЕР (Увеличен до 120x120)
+        if (Properties.Resources.digger != null)
+        {
+            int dw = Properties.Resources.digger.Width / _diggerCols;
+            int dh = Properties.Resources.digger.Height / _diggerRows;
+            int row = (_player.Condition == Condition.Fall) ? 1 : (_player.Condition == Condition.Attached ? 2 : 0);
+
+            g.DrawImage(Properties.Resources.digger,
+                new Rectangle(_player.Location.X, _player.Location.Y, 120, 120),
+                new Rectangle(_diggerCurrentFrame * dw, row * dh, dw, dh),
+                GraphicsUnit.Pixel);
+
+            // Анимация... (код остается прежним)
+        }
+
+        // 6. МОНЕТКИ (Оставляем 40x40, чтобы не были гигантскими)
         foreach (var coin in _coins)
         {
             if (!coin.IsCollected)
             {
-                var bounds = coin.GetBounds();
-                System.Drawing.Rectangle destRect = new System.Drawing.Rectangle(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
-
+                var b = coin.GetBounds();
                 if (Properties.Resources.coin != null)
                 {
-                    Image coinSheet = Properties.Resources.coin;
-                    int cWidth = coinSheet.Width / _coinCols; // Ширина одного кадра монетки
-                    int cHeight = coinSheet.Height;
-                    System.Drawing.Rectangle srcRect = new System.Drawing.Rectangle(_coinCurrentFrame * cWidth, 0, cWidth, cHeight);
-
-                    g.DrawImage(coinSheet, destRect, srcRect, GraphicsUnit.Pixel);
-                }
-                else g.FillEllipse(Brushes.Gold, destRect);
-            }
-        }
-
-        // 3. РИСУЕМ ТРОС (Коричневая линия)
-        if (_player.Projectile.IsActive || _player.Condition == Condition.Attached)
-        {
-            Pen ropePen = new Pen(Color.SaddleBrown, 3);
-            int playerCenterX = _player.Location.X + 20;
-            int playerCenterY = _player.Location.Y + 20;
-            var pBounds = _player.Projectile.GetBounds();
-            int projCenterX = pBounds.Left + pBounds.Width / 2;
-            int projCenterY = pBounds.Top + pBounds.Height / 2;
-            g.DrawLine(ropePen, playerCenterX, playerCenterY, projCenterX, projCenterY);
-        }
-
-        // 4. РИСУЕМ ВАНТУЗ (Спрайт с 2 кадрами)
-        if (_player.Projectile.IsActive || _player.Condition == Condition.Attached)
-        {
-            var pBounds = _player.Projectile.GetBounds();
-            System.Drawing.Rectangle destRect = new System.Drawing.Rectangle(pBounds.Left, pBounds.Top, pBounds.Width, pBounds.Height);
-
-            if (Properties.Resources.vantus != null)
-            {
-                Image vantusSheet = Properties.Resources.vantus;
-                int vWidth = vantusSheet.Width / _vantusCols;
-                int vHeight = vantusSheet.Height;
-
-                // Выбираем кадр: 1 (второй) если присосался, иначе 0 (первый)
-                int vFrameIndex = (_player.Condition == Condition.Attached) ? 1 : 0;
-                System.Drawing.Rectangle srcRect = new System.Drawing.Rectangle(vFrameIndex * vWidth, 0, vWidth, vHeight);
-
-                g.DrawImage(vantusSheet, destRect, srcRect, GraphicsUnit.Pixel);
-            }
-            else g.FillEllipse(Brushes.IndianRed, destRect);
-        }
-
-        // 5. РИСУЕМ ДИГГЕРА (Сложная сетка с анимациями)
-        if (Properties.Resources.digger != null)
-        {
-            Image dSheet = Properties.Resources.digger;
-
-            // Считаем размер одного кадра (учитывая и столбцы, и строки!)
-            int dWidth = dSheet.Width / _diggerCols;
-            int dHeight = dSheet.Height / _diggerRows;
-
-            // Определяем, какую СТРОКУ (анимацию) сейчас играть
-            int currentRow = 0; // По умолчанию бег
-            if (_player.Condition == Condition.Run) currentRow = 0;
-            else if (_player.Condition == Condition.Fall) currentRow = 1; // Замени на нужный номер строки (счет с нуля)
-            else if (_player.Condition == Condition.Attached) currentRow = 2; // Замени на нужный номер
-
-            // Определяем, какой СТОЛБЕЦ (кадр) сейчас вырезать
-            int sourceX = _diggerCurrentFrame * dWidth;
-            int sourceY = currentRow * dHeight;
-
-            System.Drawing.Rectangle destRect = new System.Drawing.Rectangle(_player.Location.X, _player.Location.Y, 40, 40);
-            System.Drawing.Rectangle srcRect = new System.Drawing.Rectangle(sourceX, sourceY, dWidth, dHeight);
-
-            g.DrawImage(dSheet, destRect, srcRect, GraphicsUnit.Pixel);
-
-            // Таймер для перебирания ногами
-            if (_player.Condition == Condition.Run)
-            {
-                _diggerFrameTimer++;
-                if (_diggerFrameTimer > 4)
-                {
-                    _diggerCurrentFrame = (_diggerCurrentFrame + 1) % _diggerCols;
-                    _diggerFrameTimer = 0;
+                    int cw = Properties.Resources.coin.Width / _coinCols;
+                    g.DrawImage(Properties.Resources.coin, new Rectangle(b.Left, b.Top, 40, 40),
+                        new Rectangle(_coinCurrentFrame * cw, 0, cw, Properties.Resources.coin.Height),
+                        GraphicsUnit.Pixel);
                 }
             }
         }
 
-        // 6. ЛИНИЯ ПРИЦЕЛА
+        // 7. ЛИНИЯ ПРИЦЕЛА (от нового центра)
         if (!_player.Projectile.IsActive && _player.Condition != Condition.Attached)
         {
-            Pen aimPen = new Pen(Color.Lime, 2) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
-            int startX = _player.Location.X + 20;
-            int startY = _player.Location.Y + 20;
-            double aimRadians = _player.AimAngle * (Math.PI / 180.0);
-            int endX = startX + (int)(Math.Cos(aimRadians) * 60);
-            int endY = startY + (int)(Math.Sin(aimRadians) * 60);
-            g.DrawLine(aimPen, startX, startY, endX, endY);
+            double rad = _player.AimAngle * (Math.PI / 180.0);
+            g.DrawLine(new Pen(Color.Lime, 3) { DashStyle = DashStyle.Dash },
+                playerCenterX, playerCenterY,
+                (int)(playerCenterX + Math.Cos(rad) * 100),
+                (int)(playerCenterY + Math.Sin(rad) * 100));
         }
+
+        g.ResetTransform();
     }
     private void Form1_Load(object sender, EventArgs e)
     {

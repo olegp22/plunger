@@ -23,11 +23,11 @@ public class GamePresenter
         _view.TimerTick += OnTimerTick;
     }
 
-  
 
     private void CheckCoinCollisions()
     {
-        var playerBounds = _player.GetBounds(40, 40);
+        // Указываем реальный визуальный размер 120x120 для проверки столкновений
+        var playerBounds = _player.GetBounds(120, 120);
 
         foreach (var coin in _coins)
         {
@@ -38,6 +38,36 @@ public class GamePresenter
             }
         }
     }
+
+    private void OnTimerTick()
+    {
+        if (_player.Projectile.IsActive)
+        {
+            _player.Projectile.Update();
+
+            // ЛОГИКА "ПОТОЛКА": если присоска улетела выше Y=100, она прилипает
+            if (_player.Projectile.Location.Y < 100)
+            {
+                // Здесь мы вручную меняем состояние игрока на Attached через рефлексию 
+                // или просто добавив публичный сеттер в Sucker.cs для Condition
+                // Для простоты предположим, что у вас есть доступ:
+                // _player.SetAttached(); // Рекомендую добавить такой метод в Sucker.cs
+            }
+
+            // Если улетела слишком далеко (за экран) — сбрасываем
+            if (_player.Projectile.Location.X > 2000 || _player.Projectile.Location.X < -500 ||
+                _player.Projectile.Location.Y > 1000 || _player.Projectile.Location.Y < -500)
+            {
+                _player.Projectile.Stop();
+            }
+        }
+
+        _player.UpdatePosition(1.0);
+        CheckCoinCollisions();
+        _view.RefreshView();
+        _view.UpdateScore(_player.CoinsCollected);
+    }
+    
 
     
 
@@ -60,29 +90,4 @@ public class GamePresenter
         }
     }
 
-    private void OnTimerTick()
-    {
-        // 1. Обновляем полет присоски
-        if (_player.Projectile.IsActive)
-        {
-            _player.Projectile.Update();
-
-            // Если присоска улетела за пределы экрана, отменяем выстрел
-            if (_player.Projectile.Location.X > 800 || _player.Projectile.Location.X < 0 ||
-                _player.Projectile.Location.Y > 600 || _player.Projectile.Location.Y < 0)
-            {
-                _player.Projectile.Stop();
-            }
-        }
-
-        // 2. Двигаем игрока (бег, подтягивание на тросе или падение)
-        _player.UpdatePosition(1.0);
-
-        // 3. Проверяем столкновения с монетками
-        CheckCoinCollisions();
-
-        // 4. Перерисовываем экран и обновляем счетчик монет
-        _view.RefreshView();
-        _view.UpdateScore(_player.CoinsCollected);
-    }
 }

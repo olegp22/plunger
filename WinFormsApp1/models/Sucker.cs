@@ -42,8 +42,16 @@ public class Sucker
     // Выстрел
     public void Shoot()
     {
-        if (!Projectile.IsActive && Condition != Condition.Attached)
+        // Если вантуз уже в игре (летит или присосался)
+        if (Projectile.IsActive || Condition == Condition.Attached)
         {
+            Projectile.Stop(); // Останавливаем полет
+            if (Condition == Condition.Attached)
+                Condition = Condition.Fall; // Если висели — начинаем падать
+        }
+        else
+        {
+            // Если вантуз был в покое — стреляем
             Projectile.Launch(Location, AimAngle);
         }
     }
