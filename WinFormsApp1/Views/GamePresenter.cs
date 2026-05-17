@@ -62,20 +62,26 @@ public class GamePresenter
 
     private void OnTimerTick()
     {
-        // 1. Двигаем присоску, если она запущена
+        // 1. Обновляем полет присоски
         if (_player.Projectile.IsActive)
         {
             _player.Projectile.Update();
 
-            // Здесь можно добавить проверку: если присоска попала в объект, 
-            // переводим игрока в состояние Condition.Attached
+            // Если присоска улетела за пределы экрана, отменяем выстрел
+            if (_player.Projectile.Location.X > 800 || _player.Projectile.Location.X < 0 ||
+                _player.Projectile.Location.Y > 600 || _player.Projectile.Location.Y < 0)
+            {
+                _player.Projectile.Stop();
+            }
         }
 
-        // 2. Двигаем игрока (теперь его UpdatePosition учитывает подтягивание)
+        // 2. Двигаем игрока (бег, подтягивание на тросе или падение)
         _player.UpdatePosition(1.0);
 
-        // 3. Проверяем монетки и обновляем экран
+        // 3. Проверяем столкновения с монетками
         CheckCoinCollisions();
+
+        // 4. Перерисовываем экран и обновляем счетчик монет
         _view.RefreshView();
         _view.UpdateScore(_player.CoinsCollected);
     }
