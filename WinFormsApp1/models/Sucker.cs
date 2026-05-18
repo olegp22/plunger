@@ -1,224 +1,178 @@
-namespace Plunger.Models;
-
-using System;
-using Plunger.Models.Common;
-
-public class Sucker
+namespace Plunger.Models
 {
-    public Point Location { get; private set; }
-    public int Speed { get; private set; }
-    public Condition Condition { get; private set; }
-    public Cannon Cannon { get; private set; }
-    public int CoinsCollected { get; private set; }
+    using System;
+    using Plunger.Models.Common;
 
-    // True for exactly one frame after attaching or detaching — used to trigger somersault row in View
-    public bool SomersaultThisFrame { get; private set; }
+    // Condition and Cannon defined in Enums.cs — do NOT redefine here.
 
-    public double AimAngle { get; private set; } = -45; // Default: fire up-right
-    public PlungerProjectile Projectile { get; private set; }
-
-    // ── Tuneable constants ───────────────────────────────────────────────────
-    // Horizontal run speed (pixels/tick) — increased for snappier feel
-    private const int HorizontalRunSpeed = 9;
-
-    // Vertical pull speed = 2× horizontal run speed (requirement)
-    private const int VerticalPullSpeed = HorizontalRunSpeed * 2;
-
-    // Fall speed after detach — matches the vertical pull speed so it feels consistent
-    private const int FallSpeed = VerticalPullSpeed; // 18 px/tick
-
-    // Max distance (px) the plunger may travel before auto-returning
-    private const double MaxProjectileRange = 900;
-
-    // Ceiling Y boundary (pixels from top of world)
-    public const int CeilingY = 28; // 5% of 558 ≈ 28 px — kept in sync with Form1
-
-    // Sprite height used to align the bottom of the digger's feet to the floor boundary
-    public const int SpriteHeight = 150;
-
-    // Floor Y: bottom boundary minus the sprite height so feet touch the line, not the head
-    public const int FloorY = 530 - SpriteHeight; // character bottom aligns to floor bar
-
-    // ────────────────────────────────────────────────────────────────────────
-
-    public Sucker(Point location, int speed, Condition condition, Cannon cannon = Cannon.Plunger)
+    public class Sucker
     {
-        Location = location;
-        Speed = HorizontalRunSpeed;
-        Condition = condition;
-        Cannon = cannon;
-        CoinsCollected = 0;
-        Projectile = new PlungerProjectile();
-    }
+        // ── State ─────────────────────────────────────────────────────────────
+        public Plunger.Point   Location       { get; private set; }
+        public int             Speed          { get; private set; }
+        public Condition       Condition      { get; private set; }   // not a name clash because
+        public Cannon          WeaponType     { get; private set; }   //  the property *type* is Condition
+        public int             CoinsCollected { get; private set; }
+        public bool            SomersaultThisFrame { get; private set; }
+        public double          AimAngle       { get; private set; } = -45.0;
+        public PlungerProjectile Projectile   { get; private set; }
+        public bool            CanGrappleGround { get; set; } = true;
 
-    // ── Aiming (A / D keys) ─────────────────────────────────────────────────
-    // In WinForms Y grows downward, so negative angle = upward
-    public void AimUp()   { AimAngle -= 5; }
-    public void AimDown() { AimAngle += 5; }
+        // ── Physics ───────────────────────────────────────────────────────────
+        private const int    RunSpeed     = 9;
+        private const int    PullSpeed    = RunSpeed * 2;   // 18 px / tick
+        private const int    FallSpeed    = PullSpeed;
+        private const double MaxRange     = 900;
+        private const double AimDelta     = 12.5;           // 2.5× original 5°
 
-    // ── Shoot / cancel (W key) ───────────────────────────────────────────────
-    public void Shoot()
-    {
-        if (Projectile.IsActive)
+        // ── World ─────────────────────────────────────────────────────────────
+        public const int CeilingY   = 28;
+        public const int FloorY     = 380;
+        public const int WorldWidth = 1315;
+
+        // ── Constructor ───────────────────────────────────────────────────────
+        public Sucker(Plunger.Point location, int speed, Condition condition,
+                      Cannon cannon = Cannon.Plunger)
         {
-            // Cancel in-flight plunger — return it instantly
+            Location  = location;
+            Speed     = speed;
+            Condition = condition;
+            WeaponType = cannon;
+            Projectile = new PlungerProjectile();
+        }
+
+        // ── Input ─────────────────────────────────────────────────────────────
+        public void AimUp()   { AimAngle -= AimDelta; if (AimAngle < -180) AimAngle = -180; }
+        public void AimDown() { AimAngle += AimDelta; if (AimAngle >    0) AimAngle =    0; }
+
+        public void ConsumeSomersault() => SomersaultThisFrame = false;
+
+        public void Detach()
+        {
+            if (Condition != Condition.Attached) return;
+            Condition = Condition.Fall;
             Projectile.Stop();
-            // If we were somehow attached, drop into fall
-            if (Condition == Condition.Attached)
+            SomersaultThisFrame = true;
+        }
+
+        public void Shoot()
+        {
+            if (Condition == Condition.Attached) { Detach(); return; }
+            if (Projectile.IsActive) { Projectile.Stop(); return; }
+            Projectile.Launch(new Plunger.Point(Location.X + 60, Location.Y + 60), AimAngle);
+        }
+
+        // ── Physics update ────────────────────────────────────────────────────
+        public void UpdatePosition(double dt, PlatformList? platforms = null)
+        {
+            if (Projectile.IsActive)
             {
-                TriggerSomersault();
-                Condition = Condition.Fall;
+                Projectile.Update();
+                TryCeilingAttach();
+                if (CanGrappleGround) TryGroundAttach();
+                if (platforms != null) TryPlatformAttach(platforms);
+                if (!Projectile.IsActive) goto afterProjectile; // out-of-range stops it
+                CheckOutOfRange();
             }
+            afterProjectile:
+
+            switch (Condition)
+            {
+                case Condition.Run:
+                    Location = new Plunger.Point(Location.X + RunSpeed, Location.Y);
+                    if (Location.X > WorldWidth) Location = new Plunger.Point(-120, Location.Y);
+                    break;
+
+                case Condition.Attached:
+                {
+                    double dx   = Projectile.Location.X - (Location.X + 60);
+                    double dy   = Projectile.Location.Y - (Location.Y + 60);
+                    double dist = Math.Sqrt(dx * dx + dy * dy);
+                    if (dist > PullSpeed)
+                    {
+                        Location = new Plunger.Point(
+                            Location.X + (int)(dx / dist * PullSpeed),
+                            Location.Y + (int)(dy / dist * PullSpeed));
+                    }
+                    else
+                    {
+                        Condition = Condition.Fall;
+                        Projectile.Stop();
+                        SomersaultThisFrame = true;
+                    }
+                    break;
+                }
+
+                case Condition.Fall:
+                {
+                    Location = new Plunger.Point(Location.X, Location.Y + FallSpeed);
+                    if (platforms != null)
+                        foreach (var plat in platforms.Items)
+                        {
+                            var pb   = plat.GetBounds();
+                            int bot  = Location.Y + 120;
+                            int prev = bot - FallSpeed;
+                            if (bot >= pb.Top && prev <= pb.Top
+                                && Location.X + 100 > pb.Left
+                                && Location.X + 20  < pb.Right)
+                            {
+                                Location  = new Plunger.Point(Location.X, pb.Top - 120);
+                                Condition = Condition.Run;
+                                break;
+                            }
+                        }
+                    if (Location.Y >= FloorY)
+                    { Location = new Plunger.Point(Location.X, FloorY); Condition = Condition.Run; }
+                    break;
+                }
+            }
+
+            // Clamp Y
+            int cy = Math.Max(CeilingY, Math.Min(FloorY, Location.Y));
+            if (cy != Location.Y) Location = new Plunger.Point(Location.X, cy);
         }
-        else if (Condition == Condition.Attached)
+
+        // ── Projectile attach helpers ─────────────────────────────────────────
+        private void TryCeilingAttach()
         {
-            // Already attached — treat as detach
-            Detach();
-        }
-        else
-        {
-            // Fire a fresh plunger from the centre of the digger sprite
-            var firePoint = new Point(Location.X + 60, Location.Y + 60);
-            Projectile.Launch(firePoint, AimAngle);
-        }
-    }
-
-    // ── Detach (Space key) ───────────────────────────────────────────────────
-    public void Detach()
-    {
-        if (Condition == Condition.Attached)
-        {
-            TriggerSomersault();
-            Condition = Condition.Fall;
-            Projectile.Stop();
-        }
-    }
-
-    // ── Called by Presenter every tick ──────────────────────────────────────
-    public void UpdatePosition(double deltaTime)
-    {
-        // Clear the single-frame somersault flag at the top of each tick
-        SomersaultThisFrame = false;
-
-        switch (Condition)
-        {
-            case Condition.Run:
-                UpdateRun();
-                break;
-
-            case Condition.Attached:
-                UpdateAttached();
-                break;
-
-            case Condition.Fall:
-                UpdateFall();
-                break;
-        }
-
-        ClampToBounds();
-    }
-
-    // ── State updaters ───────────────────────────────────────────────────────
-    private void UpdateRun()
-    {
-        Location += new Point(HorizontalRunSpeed, 0);
-
-        // Advance the in-flight plunger; check range and ceiling attachment
-        if (Projectile.IsActive)
-        {
-            Projectile.Update();
-            CheckProjectileOutOfRange();
-            CheckProjectileCeilingAttach();
-        }
-    }
-
-    private void UpdateAttached()
-    {
-        // Pull the digger toward the attached plunger.
-        // Horizontal: same as run speed; Vertical: 2× run speed (requirement).
-        double dx = Projectile.Location.X - Location.X;
-        double dy = Projectile.Location.Y - Location.Y;
-        double distance = Math.Sqrt(dx * dx + dy * dy);
-
-        if (distance <= Speed)
-        {
-            // Close enough — snap to plunger and auto-detach (requirement)
-            Location = Projectile.Location;
-            TriggerSomersault();
-            Condition = Condition.Fall;
-            Projectile.Stop();
-        }
-        else
-        {
-            // Move horizontally at HorizontalRunSpeed, vertically at VerticalPullSpeed
-            // Normalise each axis independently so the speeds are independent.
-            int moveX = (dx == 0) ? 0 : (int)(Math.Sign(dx) * Math.Min(HorizontalRunSpeed, Math.Abs(dx)));
-            int moveY = (dy == 0) ? 0 : (int)(Math.Sign(dy) * Math.Min(VerticalPullSpeed, Math.Abs(dy)));
-            Location += new Point(moveX, moveY);
-        }
-    }
-
-    private void UpdateFall()
-    {
-        // Fall horizontally with run speed, vertically with FallSpeed (= pull speed)
-        Location += new Point(HorizontalRunSpeed, FallSpeed);
-
-        // Land: Y is the top of the sprite; feet are at Y + SpriteHeight.
-        // Clamp so feet never pass the floor boundary.
-        if (Location.Y >= FloorY)
-        {
-            Location = new Point(Location.X, FloorY);
-            Condition = Condition.Run;
-        }
-    }
-
-    // ── Projectile helpers ───────────────────────────────────────────────────
-    private void CheckProjectileOutOfRange()
-    {
-        double dx = Projectile.Location.X - Location.X;
-        double dy = Projectile.Location.Y - Location.Y;
-        double distance = Math.Sqrt(dx * dx + dy * dy);
-
-        if (distance > MaxProjectileRange)
-        {
-            Projectile.Stop(); // Instantly returns to pocket — no freeze
-        }
-    }
-
-    private void CheckProjectileCeilingAttach()
-    {
-        // The plunger attaches when it reaches or passes the ceiling boundary
-        if (Projectile.Location.Y <= CeilingY)
-        {
-            // Pin the plunger exactly on the ceiling so the rope looks correct
-            Projectile.PinTo(new Point(Projectile.Location.X, CeilingY));
-            TriggerSomersault();          // Somersault on attach (requirement)
+            if (Projectile.Location.Y > CeilingY) return;
+            Projectile.PinTo(new Plunger.Point(Projectile.Location.X, CeilingY));
             Condition = Condition.Attached;
+            SomersaultThisFrame = true;
         }
-    }
 
-    // ── Utilities ────────────────────────────────────────────────────────────
-    private void TriggerSomersault()
-    {
-        SomersaultThisFrame = true;
-    }
+        private void TryGroundAttach()
+        {
+            if (Projectile.Location.Y < FloorY) return;
+            Projectile.PinTo(new Plunger.Point(Projectile.Location.X, FloorY));
+            Condition = Condition.Attached;
+            SomersaultThisFrame = true;
+        }
 
-    private void ClampToBounds()
-    {
-        int x = Location.X;
-        int y = Math.Max(CeilingY, Math.Min(FloorY, Location.Y));
-        if (y != Location.Y)
-            Location = new Point(x, y);
-    }
+        private void TryPlatformAttach(PlatformList platforms)
+        {
+            var pb = Projectile.GetBounds();
+            foreach (var plat in platforms.Items)
+                if (pb.IntersectsWith(plat.GetBounds()))
+                {
+                    Projectile.PinTo(new Plunger.Point(Projectile.Location.X, plat.GetBounds().Top));
+                    Condition = Condition.Attached;
+                    SomersaultThisFrame = true;
+                    return;
+                }
+        }
 
-    public void AddCoin()
-    {
-        CoinsCollected++;
-    }
+        private void CheckOutOfRange()
+        {
+            double dx = Projectile.Location.X - (Location.X + 60);
+            double dy = Projectile.Location.Y - (Location.Y + 60);
+            if (dx * dx + dy * dy > MaxRange * MaxRange) Projectile.Stop();
+        }
 
-    // Hitbox used for coin collision — strictly the main body only
-    public Rectangle GetBounds(int w, int h)
-    {
-        return new Rectangle(Location.X, Location.Y, w, h);
+        // ── Misc ──────────────────────────────────────────────────────────────
+        public void AddCoin() => CoinsCollected++;
+
+        public Rectangle GetBounds(int w, int h)
+            => new Rectangle(Location.X, Location.Y, w, h);
     }
 }

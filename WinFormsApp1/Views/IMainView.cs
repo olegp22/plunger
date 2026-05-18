@@ -1,20 +1,31 @@
-﻿using Plunger.Models;
+// Views/IMainView.cs
+using System;
+using System.Collections.Generic;
+using System.Windows.Forms;
+using Plunger.Models;
 
-namespace Plunger.Views;
-
-public interface IMainView
+namespace Plunger.Views
 {
-    // Событие, которое форма будет "поднимать" при каждом тике таймера
-    event Action TimerTick;
-    // Новое событие для передачи нажатой клавиши
-    event Action<Keys> KeyPressed;
+    /// <summary>
+    /// Contract between Presenter and View (MVP pattern).
+    /// Presenter only knows this interface — never the concrete Form.
+    /// </summary>
+    public interface IMainView
+    {
+        // ── View → Presenter (events) ─────────────────────────────────────────
+        event Action          TimerTick;
+        event Action<Keys>    KeyPressed;
 
-    // Метод для принудительной перерисовки экрана
-    void RefreshView();
+        // ── Presenter → View (commands) ───────────────────────────────────────
+        void RefreshView();
+        void UpdateScore(int score);
+        void SetGameData(Sucker player, List<Coin> coins, PlatformList platforms);
+        void ShowMenu();
+        void ShowGame();
 
-    // Метод для обновления текста счета на форме
-    void UpdateScore(int score);
-
-    //Презентер передаст сюда данные для отрисовки
-    void SetGameData(Sucker player, List<Coin> coins);
+        // ── View exposes HUD data so OnPaint can read it cleanly ──────────────
+        // (Presenter writes these via UpdateHud; View reads them in DrawHUD)
+        int  LevelTicksRemaining { get; }
+        int  TotalCoins          { get; }
+    }
 }

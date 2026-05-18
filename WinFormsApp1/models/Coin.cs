@@ -1,32 +1,25 @@
-﻿namespace Plunger.Models;
-
-using Plunger.Models.Common;
-
-public class Coin
+namespace Plunger.Models
 {
-    public Point Location { get; private set; }
-    public int Value { get; private set; }
-    public bool IsCollected { get; private set; }
+    using Plunger.Models.Common;
 
-    // Радиус или размер монетки 
-    private const int Size = 20;
-
-    public Coin(Point location, int value = 1)
+    public class Coin
     {
-        Location = location;
-        Value = value;
-        IsCollected = false;
-    }
+        public Plunger.Point Location  { get; private set; }
+        public int            Value     { get; private set; }
+        public bool           IsCollected { get; private set; }
 
-    /// Возвращает хитбокс монетки для проверки столкновения с игроком
-    public Plunger.Models.Common.Rectangle GetBounds()
-    {
-        return new Plunger.Models.Common.Rectangle(Location.X, Location.Y, Size, Size);
-    }
+        private const int Size = 24;
 
-    /// Помечает монетку как собранную
-    public void Collect()
-    {
-        IsCollected = true;
+        public Coin(Plunger.Point location, int value = 1)
+        {
+            Location    = location;
+            Value       = value;
+            IsCollected = false;
+        }
+
+        public Rectangle GetBounds()
+            => new Rectangle(Location.X, Location.Y, Size, Size);
+
+        public void Collect() => IsCollected = true;
     }
 }

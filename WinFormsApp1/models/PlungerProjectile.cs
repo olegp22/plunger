@@ -1,76 +1,46 @@
-namespace Plunger.Models;
-
-using System;
-using Plunger.Models.Common;
-
-public class PlungerProjectile
+namespace Plunger.Models
 {
-    private double _exactX;
-    private double _exactY;
+    using System;
+    using Plunger.Models.Common;
 
-    private double _velocityX;
-    private double _velocityY;
-
-    // Public read-only position (snapped to int for rendering)
-    public Point Location => new Point((int)_exactX, (int)_exactY);
-    public bool IsActive { get; private set; }
-
-    // ── Speed ────────────────────────────────────────────────────────────────
-    // Original was 20f; requirement is 3x–4x, so we use 70f (3.5×).
-    // Adjust this single constant to tune feel without touching other logic.
-    public const float Speed = 70f;
-
-    private const int Size = 15;
-
-    // ── Launch ───────────────────────────────────────────────────────────────
-    /// <summary>Launches the plunger from <paramref name="startLocation"/> at
-    /// <paramref name="angleInDegrees"/> (0° = right, negative = up in screen space).</summary>
-    public void Launch(Point startLocation, double angleInDegrees)
+    public class PlungerProjectile
     {
-        _exactX = startLocation.X;
-        _exactY = startLocation.Y;
+        private double _x, _y, _vx, _vy;
 
-        double rad = angleInDegrees * (Math.PI / 180.0);
-        _velocityX = Math.Cos(rad) * Speed;
-        _velocityY = Math.Sin(rad) * Speed;
+        public Plunger.Point Location => new Plunger.Point((int)_x, (int)_y);
+        public bool IsActive { get; private set; }
 
-        IsActive = true;
-    }
+        public const float Speed = 70f;
+        private const int  Size  = 15;
 
-    // ── Per-tick movement ────────────────────────────────────────────────────
-    public void Update()
-    {
-        if (!IsActive) return;
-        _exactX += _velocityX;
-        _exactY += _velocityY;
-    }
+        public void Launch(Plunger.Point start, double angleDeg)
+        {
+            _x = start.X; _y = start.Y;
+            double rad = angleDeg * (Math.PI / 180.0);
+            _vx = Math.Cos(rad) * Speed;
+            _vy = Math.Sin(rad) * Speed;
+            IsActive = true;
+        }
 
-    // ── Stop / return to pocket ──────────────────────────────────────────────
-    /// <summary>Instantly deactivates the plunger (returns it to the digger's pocket).
-    /// This prevents the freeze-bug where an out-of-range plunger blocks re-firing.</summary>
-    public void Stop()
-    {
-        IsActive = false;
-        _velocityX = 0;
-        _velocityY = 0;
-    }
+        public void Update()
+        {
+            if (!IsActive) return;
+            _x += _vx; _y += _vy;
+        }
 
-    // ── Ceiling pin ──────────────────────────────────────────────────────────
-    /// <summary>Pins the plunger at a fixed world position after it sticks to the ceiling.
-    /// Velocity is zeroed so it no longer drifts. <see cref="IsActive"/> stays true
-    /// so the rope continues to render until the digger detaches.</summary>
-    public void PinTo(Point position)
-    {
-        _exactX = position.X;
-        _exactY = position.Y;
-        _velocityX = 0;
-        _velocityY = 0;
-        // IsActive intentionally left true — the rope must still be drawn.
-    }
+        public void Stop()
+        {
+            IsActive = false;
+            _vx = _vy = 0;
+        }
 
-    // ── Hitbox ───────────────────────────────────────────────────────────────
-    public Rectangle GetBounds()
-    {
-        return new Rectangle((int)_exactX, (int)_exactY, Size, Size);
+        public void PinTo(Plunger.Point pos)
+        {
+            _x = pos.X; _y = pos.Y;
+            _vx = _vy = 0;
+        }
+
+        public Rectangle GetBounds()
+            => new Rectangle((int)_x, (int)_y, Size, Size);
     }
 }
