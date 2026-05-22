@@ -1,31 +1,28 @@
 // Views/IMainView.cs
 using System;
-using System.Collections.Generic;
 using System.Windows.Forms;
 using Plunger.Models;
 
 namespace Plunger.Views
 {
-    /// <summary>
-    /// Contract between Presenter and View (MVP pattern).
-    /// Presenter only knows this interface — never the concrete Form.
-    /// </summary>
     public interface IMainView
     {
-        // ── View → Presenter (events) ─────────────────────────────────────────
-        event Action          TimerTick;
-        event Action<Keys>    KeyPressed;
+        // View → Presenter
+        event Action TimerTick;
+        event Action<Keys> KeyDown;
+        event Action<Keys> KeyUp;
 
-        // ── Presenter → View (commands) ───────────────────────────────────────
-        void RefreshView();
-        void UpdateScore(int score);
-        void SetGameData(Sucker player, List<Coin> coins, PlatformList platforms);
+        // Presenter → View
+        void SetLevel(Sucker player, LevelData level, Camera camera);
         void ShowMenu();
         void ShowGame();
+        void ShowDeath();                        // экран смерти
+        void ShowVictory(int coins, int total);  // экран победы
+        void UpdateScore(int score);
+        void RefreshView();
 
-        // ── View exposes HUD data so OnPaint can read it cleanly ──────────────
-        // (Presenter writes these via UpdateHud; View reads them in DrawHUD)
-        int  LevelTicksRemaining { get; }
-        int  TotalCoins          { get; }
+        // HUD-данные
+        int LevelTicksRemaining { get; set; }
+        int TotalCoins { get; set; }
     }
 }

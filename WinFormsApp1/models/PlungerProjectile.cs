@@ -1,3 +1,4 @@
+// models/PlungerProjectile.cs
 namespace Plunger.Models
 {
     using System;
@@ -10,8 +11,9 @@ namespace Plunger.Models
         public Plunger.Point Location => new Plunger.Point((int)_x, (int)_y);
         public bool IsActive { get; private set; }
 
-        public const float Speed = 70f;
-        private const int  Size  = 15;
+        // Fast enough to feel instant across the screen
+        public static float Speed => GameConfig.ProjectileSpeed;
+        private const int Size = 14;
 
         public void Launch(Plunger.Point start, double angleDeg)
         {
@@ -28,11 +30,7 @@ namespace Plunger.Models
             _x += _vx; _y += _vy;
         }
 
-        public void Stop()
-        {
-            IsActive = false;
-            _vx = _vy = 0;
-        }
+        public void Stop() { IsActive = false; _vx = _vy = 0; }
 
         public void PinTo(Plunger.Point pos)
         {
@@ -40,7 +38,6 @@ namespace Plunger.Models
             _vx = _vy = 0;
         }
 
-        public Rectangle GetBounds()
-            => new Rectangle((int)_x, (int)_y, Size, Size);
+        public Rectangle GetBounds() => new Rectangle((int)_x, (int)_y, Size, Size);
     }
 }

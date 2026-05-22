@@ -1,178 +1,394 @@
+// models/Sucker.cs
 namespace Plunger.Models
 {
     using System;
     using Plunger.Models.Common;
 
-    // Condition and Cannon defined in Enums.cs — do NOT redefine here.
-
     public class Sucker
     {
-        // ── State ─────────────────────────────────────────────────────────────
-        public Plunger.Point   Location       { get; private set; }
-        public int             Speed          { get; private set; }
-        public Condition       Condition      { get; private set; }   // not a name clash because
-        public Cannon          WeaponType     { get; private set; }   //  the property *type* is Condition
-        public int             CoinsCollected { get; private set; }
-        public bool            SomersaultThisFrame { get; private set; }
-        public double          AimAngle       { get; private set; } = -45.0;
-        public PlungerProjectile Projectile   { get; private set; }
-        public bool            CanGrappleGround { get; set; } = true;
+        // ── Public state ──────────────────────────────────────────────────────
+        public Plunger.Point Location { get; private set; }
+        public Condition Condition { get; private set; }
+        public int CoinsCollected { get; private set; }
+        public bool SomersaultThisFrame { get; private set; }
+        public bool IsDead { get; private set; }
+        public PlungerProjectile Projectile { get; private set; }
+        public bool CanGrappleGround { get; set; } = true;
+
+        public double RunSpeed { get; set; } = GameConfig.RunSpeedLevel1;
+
+        // ── Aim ───────────────────────────────────────────────────────────────
+        public double AimAngle { get; private set; } = -60.0;
+
+        // ── Sprite / collision ────────────────────────────────────────────────
+        // Спрайт рисуется SpriteW × SpriteH.
+        // Коллизионный бокс уже и короче, прибит к нижней части спрайта.
+        //   CollisionOffX = отступ от левого края спрайта
+        //   CollisionOffY = отступ от верхнего края спрайта
+        public const int SpriteW = 90;
+        public const int SpriteH = 110;
+        public const int CollisionW = 58;
+        public const int CollisionH = 82;
+        public const int CollisionOffX = (SpriteW - CollisionW) / 2;  // 16
+        public const int CollisionOffY = SpriteH - CollisionH;         // 28
 
         // ── Physics ───────────────────────────────────────────────────────────
-        private const int    RunSpeed     = 9;
-        private const int    PullSpeed    = RunSpeed * 2;   // 18 px / tick
-        private const int    FallSpeed    = PullSpeed;
-        private const double MaxRange     = 900;
-        private const double AimDelta     = 12.5;           // 2.5× original 5°
+        // Начальная вертикальная скорость прыжка (px за тик). Отрицательное = вверх.
+        // Делается присваиваемой свойством чтобы можно было настроить значение для каждого уровня.
+        public double JumpVY { get; set; } = GameConfig.JumpVYLevel1;
 
-        // ── World ─────────────────────────────────────────────────────────────
-        public const int CeilingY   = 28;
-        public const int FloorY     = 380;
-        public const int WorldWidth = 1315;
+        // ── Attached: простой таймер ──────────────────────────────────────────
+        // AttachMaxTicks — сколько тиков максимум висим.
+        // ВАЖНО: счётчик НИКОГДА не сбрасывается пока мы в состоянии Attached.
+        // Это гарантирует отцеп даже если снаряд постоянно пересекает тайл.
+        private const int AttachMaxTicks = 30;
+        private int _attachTicks = 0;
+        private bool _justDetached = false;
+
+        private double _vx = 0;
+        private double _vy = 0;
+
+        // Флаг: прыжок запрошен в этом тике (до UpdatePosition)
+        private bool _jumpRequested = false;
 
         // ── Constructor ───────────────────────────────────────────────────────
-        public Sucker(Plunger.Point location, int speed, Condition condition,
-                      Cannon cannon = Cannon.Plunger)
+        public Sucker(Plunger.Point location)
         {
-            Location  = location;
-            Speed     = speed;
-            Condition = condition;
-            WeaponType = cannon;
+            Location = location;
+            Condition = Condition.Run;
             Projectile = new PlungerProjectile();
         }
 
-        // ── Input ─────────────────────────────────────────────────────────────
-        public void AimUp()   { AimAngle -= AimDelta; if (AimAngle < -180) AimAngle = -180; }
-        public void AimDown() { AimAngle += AimDelta; if (AimAngle >    0) AimAngle =    0; }
-
+        // ── Input (вызывается из Presenter до UpdatePosition) ─────────────────
+        public void AimUp()
+            => AimAngle = Math.Max(GameConfig.AimMin, AimAngle - GameConfig.AimStep);
+        public void AimDown()
+            => AimAngle = Math.Min(GameConfig.AimMax, AimAngle + GameConfig.AimStep);
         public void ConsumeSomersault() => SomersaultThisFrame = false;
+
+        // Прыжок: ставим флаг, реальная физика применяется внутри UpdatePosition
+        public void Jump()
+        {
+            if (Condition == Condition.Run)
+                _jumpRequested = true;
+        }
 
         public void Detach()
         {
             if (Condition != Condition.Attached) return;
+            ApplyDetachImpulse();
             Condition = Condition.Fall;
             Projectile.Stop();
             SomersaultThisFrame = true;
+            _attachTicks = 0;
         }
 
         public void Shoot()
         {
             if (Condition == Condition.Attached) { Detach(); return; }
             if (Projectile.IsActive) { Projectile.Stop(); return; }
-            Projectile.Launch(new Plunger.Point(Location.X + 60, Location.Y + 60), AimAngle);
+            var c = new Plunger.Point(Location.X + SpriteW / 2, Location.Y + SpriteH / 2);
+            Projectile.Launch(c, AimAngle);
         }
 
-        // ── Physics update ────────────────────────────────────────────────────
-        public void UpdatePosition(double dt, PlatformList? platforms = null)
+        // ── Главный апдейт ────────────────────────────────────────────────────
+        public void UpdatePosition(LevelData level)
         {
+            if (IsDead) return;
+            _justDetached = false;
+
+            // 1. Снаряд движется КАЖДЫЙ ТИК пока активен
             if (Projectile.IsActive)
             {
                 Projectile.Update();
-                TryCeilingAttach();
-                if (CanGrappleGround) TryGroundAttach();
-                if (platforms != null) TryPlatformAttach(platforms);
-                if (!Projectile.IsActive) goto afterProjectile; // out-of-range stops it
+
+                // Присоска прикрепляется ТОЛЬКО если мы ещё не Attached
+                if (Condition != Condition.Attached)
+                    TryAttach(level);
+
                 CheckOutOfRange();
             }
-            afterProjectile:
+
+            // 2. Применяем запрошенный прыжок
+            bool jumping = false;
+            if (_jumpRequested && Condition == Condition.Run)
+            {
+                _jumpRequested = false;
+                _vy = JumpVY;
+                _vx = RunSpeed;
+                Condition = Condition.Fall;
+                jumping = true;
+            }
+            _jumpRequested = false;
+
+            // 3. Вычисляем смещение
+            double dx = 0, dy = 0;
 
             switch (Condition)
             {
                 case Condition.Run:
-                    Location = new Plunger.Point(Location.X + RunSpeed, Location.Y);
-                    if (Location.X > WorldWidth) Location = new Plunger.Point(-120, Location.Y);
+                    // ВАЖНО: не трогаем _vy здесь — он уже может быть установлен прыжком
+                    _vx = RunSpeed;
+                    _vy = 0;    // сброс vy при беге (не прыжке)
+                    dx = _vx;
                     break;
 
                 case Condition.Attached:
-                {
-                    double dx   = Projectile.Location.X - (Location.X + 60);
-                    double dy   = Projectile.Location.Y - (Location.Y + 60);
-                    double dist = Math.Sqrt(dx * dx + dy * dy);
-                    if (dist > PullSpeed)
+                    // Счётчик растёт каждый тик — НИКАКИХ сбросов здесь
+                    _attachTicks++;
+
+                    if (_attachTicks >= AttachMaxTicks)
                     {
-                        Location = new Plunger.Point(
-                            Location.X + (int)(dx / dist * PullSpeed),
-                            Location.Y + (int)(dy / dist * PullSpeed));
+                        // Время вышло — принудительный отцеп
+                        ForceDetach();
+                        break;
                     }
-                    else
+
+                    double toX = Projectile.Location.X - (Location.X + SpriteW / 2.0);
+                    double toY = Projectile.Location.Y - (Location.Y + SpriteH / 2.0);
+                    double dist = Math.Sqrt(toX * toX + toY * toY);
+
+                    if (dist < 10.0)
                     {
-                        Condition = Condition.Fall;
-                        Projectile.Stop();
-                        SomersaultThisFrame = true;
+                        // Добрались до точки — отцеп
+                        ForceDetach();
+                        break;
                     }
+
+                    double spd = Math.Min(GameConfig.PullSpeed, dist);
+                    _vx = (toX / dist) * spd;
+                    _vy = (toY / dist) * spd;
+                    dx = _vx;
+                    dy = _vy;
                     break;
-                }
 
                 case Condition.Fall:
-                {
-                    Location = new Plunger.Point(Location.X, Location.Y + FallSpeed);
-                    if (platforms != null)
-                        foreach (var plat in platforms.Items)
-                        {
-                            var pb   = plat.GetBounds();
-                            int bot  = Location.Y + 120;
-                            int prev = bot - FallSpeed;
-                            if (bot >= pb.Top && prev <= pb.Top
-                                && Location.X + 100 > pb.Left
-                                && Location.X + 20  < pb.Right)
-                            {
-                                Location  = new Plunger.Point(Location.X, pb.Top - 120);
-                                Condition = Condition.Run;
-                                break;
-                            }
-                        }
-                    if (Location.Y >= FloorY)
-                    { Location = new Plunger.Point(Location.X, FloorY); Condition = Condition.Run; }
+                    if (!jumping)
+                    {
+                        _vy = Math.Min(_vy + GameConfig.Gravity, GameConfig.MaxFallSpeed);
+                        _vx *= GameConfig.AirFriction;
+                    }
+                    dx = _vx;
+                    dy = _vy;
                     break;
-                }
             }
 
-            // Clamp Y
-            int cy = Math.Max(CeilingY, Math.Min(FloorY, Location.Y));
-            if (cy != Location.Y) Location = new Plunger.Point(Location.X, cy);
+            // 4. Если только что отцепились — пропускаем sweep этого тика
+            if (_justDetached) return;
+
+            var (nx, ny, blockedX, blockedY, landed) =
+                SweepResolve(Location.X, Location.Y, dx, dy, level);
+
+            Location = new Plunger.Point(nx, ny);
+
+            if (blockedX) _vx = 0;
+            if (blockedY && _vy > 0) _vy = 0;   // гасим только падение, не прыжок вверх
+
+            // Посадка только из Fall
+            if (landed && Condition == Condition.Fall)
+            {
+                Condition = Condition.Run;
+                _vx = RunSpeed;
+                _vy = 0;
+            }
+
+            // 5. Жёсткий Y-зажим
+            int floorTop = LevelBuilder.GetFloorTop(level);
+            int ceilBot = LevelBuilder.GetCeilBot(level);
+            int clampY = Math.Max(ceilBot, Math.Min(floorTop - CollisionH, ny));
+            if (clampY != ny)
+            {
+                if (ny > floorTop - CollisionH && Condition != Condition.Run)
+                { Condition = Condition.Run; _vx = RunSpeed; _vy = 0; }
+                Location = new Plunger.Point(nx, clampY);
+            }
+
+            if (Location.X < LevelBuilder.WallW)
+                Location = new Plunger.Point(LevelBuilder.WallW, Location.Y);
         }
 
-        // ── Projectile attach helpers ─────────────────────────────────────────
-        private void TryCeilingAttach()
+        // ── Принудительный отцеп ──────────────────────────────────────────────
+        private void ForceDetach()
         {
-            if (Projectile.Location.Y > CeilingY) return;
-            Projectile.PinTo(new Plunger.Point(Projectile.Location.X, CeilingY));
-            Condition = Condition.Attached;
+            ApplyDetachImpulse();
+            Condition = Condition.Fall;
+            Projectile.Stop();
             SomersaultThisFrame = true;
+            _justDetached = true;
+            _attachTicks = 0;
         }
 
-        private void TryGroundAttach()
+        private void ApplyDetachImpulse()
         {
-            if (Projectile.Location.Y < FloorY) return;
-            Projectile.PinTo(new Plunger.Point(Projectile.Location.X, FloorY));
-            Condition = Condition.Attached;
-            SomersaultThisFrame = true;
+            double dx = Projectile.Location.X - (Location.X + SpriteW / 2.0);
+            double dy = Projectile.Location.Y - (Location.Y + SpriteH / 2.0);
+            double dist = Math.Sqrt(dx * dx + dy * dy);
+            if (dist > 1.0)
+            {
+                _vx = (dx / dist) * GameConfig.PullSpeed * 0.5;
+                _vy = (dy / dist) * GameConfig.PullSpeed * 0.5;
+            }
+            else
+            {
+                _vx = GameConfig.PullSpeed * 0.3;
+                _vy = -GameConfig.PullSpeed * 0.2;
+            }
         }
 
-        private void TryPlatformAttach(PlatformList platforms)
+        // ── Sweep-коллизия ────────────────────────────────────────────────────
+        private (int nx, int ny, bool blockedX, bool blockedY, bool landed)
+            SweepResolve(int ox, int oy, double dx, double dy, LevelData level)
         {
-            var pb = Projectile.GetBounds();
-            foreach (var plat in platforms.Items)
-                if (pb.IntersectsWith(plat.GetBounds()))
+            int cx0 = ox + CollisionOffX;
+            int cy0 = oy + CollisionOffY;
+            int cx = cx0 + (int)Math.Round(dx);
+            int cy = cy0 + (int)Math.Round(dy);
+
+            bool blockedX = false, blockedY = false, landed = false;
+
+            int ceilBot = LevelBuilder.GetCeilBot(level);
+            int floorTop = LevelBuilder.GetFloorTop(level);
+
+            // Pass 1: Y
+            var boxY = new Rectangle(cx0, cy, CollisionW, CollisionH);
+            foreach (var tile in level.Tiles)
+            {
+                var tb = tile.GetBounds();
+                if (!boxY.IntersectsWith(tb)) continue;
+                switch (tile.Type)
                 {
-                    Projectile.PinTo(new Plunger.Point(Projectile.Location.X, plat.GetBounds().Top));
-                    Condition = Condition.Attached;
-                    SomersaultThisFrame = true;
-                    return;
+                    case TileType.Ground:
+                    case TileType.Floor:
+                    case TileType.Platform:
+                        if (dy > 0 && cy0 + CollisionH <= tb.Top + 12)
+                        { cy = tb.Top - CollisionH; blockedY = true; landed = true; }
+                        else if (dy < 0 && cy0 >= tb.Bottom - 6)
+                        { cy = tb.Bottom; blockedY = true; }
+                        break;
+                    case TileType.Ceiling:
+                        if (dy < 0) { cy = tb.Bottom; blockedY = true; }
+                        break;
                 }
+                boxY = new Rectangle(cx0, cy, CollisionW, CollisionH);
+            }
+            if (cy < ceilBot) { cy = ceilBot; blockedY = true; }
+            if (cy + CollisionH > floorTop)
+            { cy = floorTop - CollisionH; blockedY = true; landed = true; }
+
+            // Pass 2: X
+            var boxX = new Rectangle(cx, cy, CollisionW, CollisionH);
+            foreach (var tile in level.Tiles)
+            {
+                var tb = tile.GetBounds();
+                if (!boxX.IntersectsWith(tb)) continue;
+                switch (tile.Type)
+                {
+                    case TileType.Wall:
+                        if (dx >= 0 && cx0 + CollisionW <= tb.Left + 10)
+                        { cx = tb.Left - CollisionW; blockedX = true; }
+                        else if (dx < 0 && cx0 >= tb.Right - 10)
+                        { cx = tb.Right; blockedX = true; }
+                        break;
+                    case TileType.Ground:
+                    case TileType.Floor:
+                    case TileType.Platform:
+                        {
+                            int ov = Math.Min(cy + CollisionH, tb.Bottom) - Math.Max(cy, tb.Top);
+                            if (ov > 12)
+                            {
+                                if (dx >= 0 && cx0 + CollisionW <= tb.Left + 10)
+                                { cx = tb.Left - CollisionW; blockedX = true; }
+                                else if (dx < 0 && cx0 >= tb.Right - 10)
+                                { cx = tb.Right; blockedX = true; }
+                            }
+                            break;
+                        }
+                }
+                boxX = new Rectangle(cx, cy, CollisionW, CollisionH);
+            }
+            if (cx < LevelBuilder.WallW) { cx = LevelBuilder.WallW; blockedX = true; }
+
+            // Ground-support
+            if (!landed && Condition == Condition.Run)
+            {
+                var feet = new Rectangle(cx + 4, cy + CollisionH, CollisionW - 8, 4);
+                bool sup = false;
+                foreach (var tile in level.Tiles)
+                {
+                    if (tile.Type == TileType.Wall || tile.Type == TileType.Ceiling) continue;
+                    if (feet.IntersectsWith(tile.GetBounds())) { sup = true; break; }
+                }
+                if (cy + CollisionH >= floorTop) sup = true;
+                if (!sup) Condition = Condition.Fall;
+            }
+
+            return (cx - CollisionOffX, cy - CollisionOffY, blockedX, blockedY, landed);
+        }
+
+        // ── Присоска ──────────────────────────────────────────────────────────
+        private void TryAttach(LevelData level)
+        {
+            if (!Projectile.IsActive) return;
+            var pb = Projectile.GetBounds();
+
+            foreach (var tile in level.Tiles)
+            {
+                if (tile.Type == TileType.Ground && !CanGrappleGround) continue;
+                if (!pb.IntersectsWith(tile.GetBounds())) continue;
+
+                var tb = tile.GetBounds();
+                int px = Projectile.Location.X, py = Projectile.Location.Y;
+                switch (tile.Type)
+                {
+                    case TileType.Ceiling: py = tb.Bottom; break;
+                    case TileType.Ground:
+                    case TileType.Floor:
+                    case TileType.Platform: py = tb.Top; break;
+                    case TileType.Wall:
+                        px = (px < tb.Left + tb.Width / 2) ? tb.Left : tb.Right; break;
+                }
+                Projectile.PinTo(new Plunger.Point(px, py));
+                // _attachTicks НЕ сбрасывается при повторном пересечении того же тайла
+                // Сброс только при первом присоединении (Condition ещё не Attached)
+                if (Condition != Condition.Attached)
+                {
+                    Condition = Condition.Attached;
+                    _attachTicks = 0;
+                    SomersaultThisFrame = true;
+                }
+                return;
+            }
+
+            int ceil = LevelBuilder.GetCeilBot(level);
+            int floor = LevelBuilder.GetFloorTop(level);
+            if (Projectile.Location.Y <= ceil)
+            {
+                Projectile.PinTo(new Plunger.Point(Projectile.Location.X, ceil));
+                if (Condition != Condition.Attached)
+                { Condition = Condition.Attached; _attachTicks = 0; SomersaultThisFrame = true; }
+            }
+            else if (CanGrappleGround && Projectile.Location.Y >= floor)
+            {
+                Projectile.PinTo(new Plunger.Point(Projectile.Location.X, floor));
+                if (Condition != Condition.Attached)
+                { Condition = Condition.Attached; _attachTicks = 0; SomersaultThisFrame = true; }
+            }
         }
 
         private void CheckOutOfRange()
         {
-            double dx = Projectile.Location.X - (Location.X + 60);
-            double dy = Projectile.Location.Y - (Location.Y + 60);
-            if (dx * dx + dy * dy > MaxRange * MaxRange) Projectile.Stop();
+            double dx = Projectile.Location.X - (Location.X + SpriteW / 2.0);
+            double dy = Projectile.Location.Y - (Location.Y + SpriteH / 2.0);
+            if (dx * dx + dy * dy > GameConfig.GrappleRange * GameConfig.GrappleRange)
+                Projectile.Stop();
         }
 
-        // ── Misc ──────────────────────────────────────────────────────────────
+        public void Kill() { IsDead = true; }
         public void AddCoin() => CoinsCollected++;
-
-        public Rectangle GetBounds(int w, int h)
-            => new Rectangle(Location.X, Location.Y, w, h);
+        public Rectangle GetBounds()
+            => new Rectangle(Location.X, Location.Y, SpriteW, SpriteH);
+        public Rectangle GetCollisionBox()
+            => new Rectangle(Location.X + CollisionOffX, Location.Y + CollisionOffY,
+                             CollisionW, CollisionH);
     }
 }
