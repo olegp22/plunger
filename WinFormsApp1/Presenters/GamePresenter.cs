@@ -86,6 +86,23 @@ namespace Plunger.Presenters
                 if (!coin.IsCollected && pb.IntersectsWith(coin.GetBounds()))
                 { coin.Collect(); _player.AddCoin(); }
 
+            // Flags -> victory trigger
+            if (_level.Flags != null)
+            {
+                foreach (var flag in _level.Flags)
+                {
+                    if (pb.IntersectsWith(flag))
+                    {
+                        int coins = _player.CoinsCollected;
+                        int total = _level.Coins.Count;
+                        _levelNum = 0;
+                        _aimUpHeld = _aimDownHeld = false;
+                        _view.ShowVictory(coins, total);
+                        return;
+                    }
+                }
+            }
+
             _view.UpdateScore(_player.CoinsCollected);
             _view.LevelTicksRemaining = LevelDurationTicks - _levelTick;
 

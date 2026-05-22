@@ -50,6 +50,8 @@ namespace Plunger.Models
 
         // Флаг: прыжок запрошен в этом тике (до UpdatePosition)
         private bool _jumpRequested = false;
+        // Флаг: мы в воздухе из-за прыжка (true пока не приземлились).
+        private bool _airborneFromJump = false;
 
         // ── Constructor ───────────────────────────────────────────────────────
         public Sucker(Plunger.Point location)
@@ -116,6 +118,8 @@ namespace Plunger.Models
                 _jumpRequested = false;
                 _vy = JumpVY;
                 _vx = RunSpeed;
+                // Помечаем что это именно прыжок — сохраняем горизонтальную скорость
+                _airborneFromJump = true;
                 Condition = Condition.Fall;
                 jumping = true;
             }
@@ -166,7 +170,9 @@ namespace Plunger.Models
                     if (!jumping)
                     {
                         _vy = Math.Min(_vy + GameConfig.Gravity, GameConfig.MaxFallSpeed);
-                        _vx *= GameConfig.AirFriction;
+                        // Если мы в воздухе из-за прыжка — не гасим горизонтальную скорость
+                        if (!_airborneFromJump)
+                            _vx *= GameConfig.AirFriction;
                     }
                     dx = _vx;
                     dy = _vy;
@@ -190,6 +196,7 @@ namespace Plunger.Models
                 Condition = Condition.Run;
                 _vx = RunSpeed;
                 _vy = 0;
+                _airborneFromJump = false;
             }
 
             // 5. Жёсткий Y-зажим
@@ -216,6 +223,8 @@ namespace Plunger.Models
             SomersaultThisFrame = true;
             _justDetached = true;
             _attachTicks = 0;
+            // Отцеп — это не прыжок
+            _airborneFromJump = false;
         }
 
         private void ApplyDetachImpulse()

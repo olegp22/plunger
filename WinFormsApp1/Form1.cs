@@ -24,8 +24,12 @@ namespace WinFormsApp1
         // ═════════════════════════════════════════════════════════════════════
         // IMainView — HUD data (Presenter writes; OnPaint reads)
         // ═════════════════════════════════════════════════════════════════════
-        public int LevelTicksRemaining { get; set; } = GamePresenter.LevelDurationTicks;
-        public int TotalCoins { get; set; } = 0;
+        private int _levelTicksRemaining = GamePresenter.LevelDurationTicks;
+        private int _totalCoins = 0;
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public int LevelTicksRemaining { get => _levelTicksRemaining; set => _levelTicksRemaining = value; }
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public int TotalCoins { get => _totalCoins; set => _totalCoins = value; }
 
         // ═════════════════════════════════════════════════════════════════════
         // Rendering state
@@ -92,6 +96,32 @@ namespace WinFormsApp1
             SetStyle(ControlStyles.OptimizedDoubleBuffer |
                      ControlStyles.AllPaintingInWmPaint |
                      ControlStyles.UserPaint, true);
+        }
+
+        private void DrawFlags(Graphics g, int scrollX)
+        {
+            if (_level == null || _level.Flags == null) return;
+
+            foreach (var f in _level.Flags)
+            {
+                // f is Plunger.Models.Common.Rectangle — build a System.Drawing.Rectangle for rendering
+                var sr = new System.Drawing.Rectangle(f.X - scrollX, f.Y, f.Width, f.Height);
+                if (sr.Right < 0 || sr.Left > ClientSize.Width) continue;
+
+                // Pole
+                using (var pb = new SolidBrush(Color.SaddleBrown))
+                    g.FillRectangle(pb, sr.X + 6, sr.Y + 4, 4, sr.Height - 8);
+                // Flag triangle
+                using (var flagB = new SolidBrush(Color.FromArgb(230, 220, 40)))
+                {
+                    var p1 = new Point(sr.X + 10, sr.Y + 8);
+                    var p2 = new Point(sr.X + sr.Width - 6, sr.Y + sr.Height / 2);
+                    var p3 = new Point(sr.X + 10, sr.Y + sr.Height - 8);
+                    g.FillPolygon(flagB, new[] { p1, p2, p3 });
+                }
+                using (var pen = new Pen(Color.FromArgb(200, 120, 80, 0), 1.2f))
+                    g.DrawRectangle(pen, sr.X, sr.Y, sr.Width, sr.Height);
+            }
         }
 
         // Form1_Load wired by Designer (new EventHandler(Form1_Load))
@@ -221,6 +251,7 @@ namespace WinFormsApp1
 
             // ── Render world elements, all offset by -scrollX ─────────────────
             DrawTiles(g, scrollX);
+            DrawFlags(g, scrollX);
             DrawCoins(g, scrollX);
             DrawRope(g, scrollX);
             DrawAimLaser(g, scrollX);

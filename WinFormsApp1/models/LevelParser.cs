@@ -117,6 +117,14 @@ namespace Plunger.Models
                         d.AddCoin(cx, cy);
                     }
 
+            // ── Проход 4: флаги 'F' ───────────────────────────────────────────
+            for (int r = 0; r < rows; r++)
+                for (int c = 0; c < cols; c++)
+                    if (grid[r, c] == 'F')
+                    {
+                        d.AddFlag(c * CellW, r * CellH, CellW, CellH);
+                    }
+
             return d;
         }
 
