@@ -19,8 +19,8 @@ namespace WinFormsApp1
             gameTimer = new System.Windows.Forms.Timer(components);
             SuspendLayout();
 
-            // ~60 fps
-            gameTimer.Interval = 16;
+            // ~30 fps (stable on slower machines)
+            gameTimer.Interval = 33;
             // object? sender — совпадает с сигнатурой gameTimer_Tick в Form1.cs
             gameTimer.Tick += new System.EventHandler(gameTimer_Tick);
 

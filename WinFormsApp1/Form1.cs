@@ -14,12 +14,52 @@ namespace WinFormsApp1
 {
     public partial class Form1 : Form, IMainView
     {
+        // Performance: cache frequently used fonts/formatters and pens/brushes to avoid allocations every paint
+        private static readonly Random _rng = new Random(42);
+        private static readonly StringFormat _centerFormat = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Near };
+        private static readonly Font _fImpact54 = new Font("Impact", 54, FontStyle.Regular, GraphicsUnit.Pixel);
+        private static readonly Font _fSegoe15Italic = new Font("Segoe UI", 15, FontStyle.Italic, GraphicsUnit.Pixel);
+        private static readonly Font _fSegoe13 = new Font("Segoe UI", 13, FontStyle.Regular, GraphicsUnit.Pixel);
+        private static readonly Font _fImpact21 = new Font("Impact", 21, FontStyle.Regular, GraphicsUnit.Pixel);
+        private static readonly Font _fSegoe12Italic = new Font("Segoe UI", 12, FontStyle.Italic, GraphicsUnit.Pixel);
+        private static readonly Font _fSegoe11 = new Font("Segoe UI", 11, FontStyle.Regular, GraphicsUnit.Pixel);
+        private static readonly Font _fSegoe13Bold = new Font("Segoe UI", 13, FontStyle.Bold, GraphicsUnit.Pixel);
+        private static readonly Font _fConsolas13 = new Font("Consolas", 13, FontStyle.Bold, GraphicsUnit.Pixel);
+        private static readonly Font _fSegoe22 = new Font("Segoe UI", 22, FontStyle.Bold, GraphicsUnit.Pixel);
+        private static readonly Font _fImpact80 = new Font("Impact", 80, FontStyle.Regular, GraphicsUnit.Pixel);
+        private static readonly Font _fSegoe20 = new Font("Segoe UI", 20, FontStyle.Regular, GraphicsUnit.Pixel);
+        private static readonly Font _fImpact36 = new Font("Impact", 36, FontStyle.Regular, GraphicsUnit.Pixel);
+        // Simple runtime profiler / FPS counter
+        private readonly System.Diagnostics.Stopwatch _sw = new System.Diagnostics.Stopwatch();
+        private long _lastUpdateMs = 0;
+        private long _lastDrawMs = 0;
+        private int _frameCount = 0;
+        private int _lastFps = 0;
+        private long _fpsTimerStart = 0;
+        // Cached pens/brushes
+        private static readonly Pen _ropePen = new Pen(Color.FromArgb(210, 140, 90, 40), 3f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+        private static readonly Pen _aimPen = new Pen(Color.FromArgb(180, 100, 255, 100), 1.8f) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
+        private static readonly SolidBrush _groundBrush = new SolidBrush(Color.FromArgb(255, 80, 60, 30));
+        private static readonly SolidBrush _grassBrush = new SolidBrush(Color.FromArgb(200, 70, 120, 40));
+        private static readonly Pen _groundBorder = new Pen(Color.FromArgb(160, 100, 75, 30), 1.5f);
+        private static readonly SolidBrush _ceilingBrush = new SolidBrush(Color.FromArgb(255, 35, 25, 55));
+        private static readonly SolidBrush _ceilingStone = new SolidBrush(Color.FromArgb(160, 80, 65, 100));
+        private static readonly Pen _ceilingGrid = new Pen(Color.FromArgb(40, 255, 255, 255), 1);
+        private static readonly SolidBrush _wallBrush = new SolidBrush(Color.FromArgb(230, 60, 45, 80));
+        private static readonly Pen _wallHigh = new Pen(Color.FromArgb(100, 150, 120, 200), 2);
+        private static readonly Pen _platformBorder = new Pen(Color.FromArgb(170, 125, 95, 42), 1.5f);
+        private static readonly Pen _gridPen = new Pen(Color.FromArgb(50, 0, 0, 0), 1);
+        // Precomputed menu stars to avoid per-frame allocations
+        private readonly (float X, float Y, float Size, Color Col)[] _menuStars;
+
         // ═════════════════════════════════════════════════════════════════════
         // IMainView — events (View → Presenter)
         // ═════════════════════════════════════════════════════════════════════
         public event Action? TimerTick;
         public event Action<Keys>? KeyDown;
         public event Action<Keys>? KeyUp;
+        // Mouse click event for presenter (separate from Control.MouseClick)
+        public new event Action<MouseButtons>? MouseClick;
 
         // ═════════════════════════════════════════════════════════════════════
         // IMainView — HUD data (Presenter writes; OnPaint reads)
@@ -67,7 +107,7 @@ namespace WinFormsApp1
         private enum ScreenMode { Menu, Game, Death, Victory }
         private ScreenMode _screen = ScreenMode.Menu;
         private bool _showMenu => _screen == ScreenMode.Menu;
-        private int _menuHover = -1;   // -1=none, 0=lvl1, 1=lvl2
+        private int _menuHover = -1;   // -1=none, 0=lvl1, 1=lvl2, 2=lvl3
 
         // Данные для экрана победы
         private int _victoryCoins = 0;
@@ -91,11 +131,20 @@ namespace WinFormsApp1
             base.KeyDown += new KeyEventHandler(HandleKeyDown);
             base.KeyUp += new KeyEventHandler(HandleKeyUp);
             MouseMove += new MouseEventHandler(HandleMouseMove);
-            MouseClick += new MouseEventHandler(HandleMouseClick);
+            base.MouseClick += new MouseEventHandler(HandleMouseClick);
 
             SetStyle(ControlStyles.OptimizedDoubleBuffer |
                      ControlStyles.AllPaintingInWmPaint |
                      ControlStyles.UserPaint, true);
+
+            // Precompute stars for menu background
+            _menuStars = new (float X, float Y, float Size, Color Col)[90];
+            for (int i = 0; i < _menuStars.Length; i++)
+            {
+                float sz = (float)(_rng.NextDouble() * 2.5 + 0.4);
+                var col = Color.FromArgb(_rng.Next(80, 255), 210, 215, 255);
+                _menuStars[i] = (_rng.Next(0, 800), _rng.Next(0, 600), sz, col);
+            }
         }
 
         private void DrawFlags(Graphics g, int scrollX)
@@ -152,10 +201,17 @@ namespace WinFormsApp1
 
         private void HandleMouseClick(object? sender, MouseEventArgs e)
         {
-            if (!_showMenu) return;
-            int hit = MenuHitTest(e.Location);
-            if (hit == 0) _presenter.StartLevel(1);
-            else if (hit == 1) _presenter.StartLevel(2);
+            if (_showMenu)
+            {
+                int hit = MenuHitTest(e.Location);
+                if (hit == 0) _presenter.StartLevel(1);
+                else if (hit == 1) _presenter.StartLevel(2);
+                else if (hit == 2) _presenter.StartLevel(3);
+                return;
+            }
+
+            // In-game: forward mouse clicks to presenter (e.g., LMB to toggle gravity on level 3)
+            MouseClick?.Invoke(e.Button);
         }
 
         private int MenuHitTest(Point pt)
@@ -163,6 +219,7 @@ namespace WinFormsApp1
             int cx = ClientSize.Width / 2;
             if (Rect(cx - 150, 245, 300, 65).Contains(pt)) return 0;
             if (Rect(cx - 150, 335, 300, 65).Contains(pt)) return 1;
+            if (Rect(cx - 150, 425, 300, 65).Contains(pt)) return 2;
             return -1;
         }
 
@@ -171,13 +228,30 @@ namespace WinFormsApp1
         // ═════════════════════════════════════════════════════════════════════
         public void SetLevel(Sucker player, LevelData level, Camera camera)
         {
+            // Unsubscribe previous player events
+            if (_player != null)
+                _player.StateChanged -= Player_StateChanged;
+
             _player = player;
             _level = level;
             _camera = camera;
             _score = 0;
+            // Subscribe to model changes (observer)
+            if (_player != null)
+                _player.StateChanged += Player_StateChanged;
+
             // Reset animation
             _animRow = RowRun; _animCol = 0; _frameTimer = 0;
             _isSomersaulting = false;
+        }
+
+        private void Player_StateChanged()
+        {
+            if (_player == null) return;
+            // Update HUD data from model and request redraw
+            _score = _player.CoinsCollected;
+            Text = $"Plunger Dash — {_score} coins";
+            Invalidate();
         }
 
         public void ShowMenu()
@@ -243,8 +317,11 @@ namespace WinFormsApp1
                 g.Clear(Color.FromArgb(18, 14, 34));
 
             if (_player == null || _level == null || _camera == null) return;
-
             int scrollX = _camera.ScrollX;
+
+            // Simple FPS/update timing
+            if (!_sw.IsRunning) { _sw.Start(); _fpsTimerStart = _sw.ElapsedMilliseconds; }
+            long t0 = _sw.ElapsedMilliseconds;
 
             // ── Update animation state (read-only from model) ─────────────────
             StepAnimation();
@@ -257,6 +334,23 @@ namespace WinFormsApp1
             DrawAimLaser(g, scrollX);
             DrawPlayer(g, scrollX);
             DrawHUD(g);
+
+            long t1 = _sw.ElapsedMilliseconds;
+            _lastDrawMs = t1 - t0;
+            _frameCount++;
+            if (t1 - _fpsTimerStart >= 1000)
+            {
+                _lastFps = _frameCount;
+                _frameCount = 0;
+                _fpsTimerStart = t1;
+            }
+            // draw FPS in top-left
+            using (var fb = new SolidBrush(Color.White))
+            {
+                string info = $"FPS: {_lastFps}  Draw: {_lastDrawMs}ms";
+                if (_presenter != null) info += $"  Update: {_presenter.LastUpdateMs}ms";
+                g.DrawString(info, _fConsolas13, fb, 8, 8);
+            }
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -266,62 +360,51 @@ namespace WinFormsApp1
         {
             int w = ClientSize.Width, h = ClientSize.Height, cx = w / 2;
 
-            // Dark gradient background
-            using (var bg = new LinearGradientBrush(
-                    new Point(0, 0), new Point(0, h),
-                    Color.FromArgb(10, 8, 25), Color.FromArgb(28, 16, 55)))
+            // Dark background (avoid per-frame gradient allocation)
+            using (var bg = new SolidBrush(Color.FromArgb(28, 16, 55)))
                 g.FillRectangle(bg, 0, 0, w, h);
 
-            // Stars
-            var rng = new Random(42);
-            for (int i = 0; i < 90; i++)
+            // Stars (precomputed) - draw with a single shared brush to reduce allocations
+            for (int i = 0; i < _menuStars.Length; i++)
             {
-                float sz = (float)(rng.NextDouble() * 2.5 + 0.4);
-                using var sb = new SolidBrush(Color.FromArgb(rng.Next(80, 255), 210, 215, 255));
-                g.FillEllipse(sb, rng.Next(w) - sz / 2, rng.Next(h) - sz / 2, sz, sz);
+                var s = _menuStars[i];
+                using var sb = new SolidBrush(s.Col);
+                g.FillEllipse(sb, s.X % w - s.Size / 2, s.Y % h - s.Size / 2, s.Size, s.Size);
             }
 
             // Title
-            using (var tf = new Font("Impact", 54, FontStyle.Regular, GraphicsUnit.Pixel))
-            {
-                const string title = "PLUNGER DASH";
-                var tsz = g.MeasureString(title, tf);
-                float tx = cx - tsz.Width / 2;
-                // Drop shadow
-                using (var shadow = new SolidBrush(Color.FromArgb(100, 255, 140, 0)))
-                    g.DrawString(title, tf, shadow, tx + 3, 88 + 3);
-                // Gradient fill
-                using (var grad = new LinearGradientBrush(
-                        new Point(cx - 260, 88), new Point(cx + 260, 148),
-                        Color.FromArgb(255, 255, 230, 80),
-                        Color.FromArgb(255, 255, 130, 0)))
-                    g.DrawString(title, tf, grad, tx, 88);
-            }
-
+            var tf = _fImpact54;
+            const string title = "PLUNGER DASH";
+            // Drop shadow
+            using (var shadow = new SolidBrush(Color.FromArgb(100, 255, 140, 0)))
+                g.DrawString(title, tf, shadow, cx, 88 + 3, _centerFormat);
+            // Fill title (use solid brush to avoid GDI issues with gradient brushes in some environments)
+            using (var fill = new SolidBrush(Color.FromArgb(255, 255, 230, 80)))
+                g.DrawString(title, tf, fill, cx, 88, _centerFormat);
             DrawCentred(g, "Grapple  •  Swing  •  Collect",
-                new Font("Segoe UI", 15, FontStyle.Italic, GraphicsUnit.Pixel),
+                _fSegoe15Italic,
                 Color.FromArgb(170, 200, 205, 255), cx, 158);
 
             DrawCentred(g, "[W] Shoot hook     [A / D] Aim     [Space] Detach     [Esc] Menu",
-                new Font("Segoe UI", 13, FontStyle.Regular, GraphicsUnit.Pixel),
+                _fSegoe13,
                 Color.FromArgb(130, 170, 255, 170), cx, 195);
 
             DrawMenuButton(g, cx, 245, "LEVEL 1 — The Run",
                 "Ceiling & floor grapple  |  coin sprint", _menuHover == 0);
             DrawMenuButton(g, cx, 335, "LEVEL 2 — Wall Climb",
                 "Walls, platforms & vertical climbing", _menuHover == 1);
+            DrawMenuButton(g, cx, 425, "LEVEL 3 — Gravity Flip",
+                "Invert gravity  |  survive by flipping", _menuHover == 2);
 
             DrawCentred(g, "Click a level to begin",
-                new Font("Segoe UI", 11, FontStyle.Regular, GraphicsUnit.Pixel),
+                _fSegoe11,
                 Color.FromArgb(70, 170, 170, 170), cx, h - 30);
         }
 
         private static void DrawCentred(Graphics g, string text, Font font, Color color, int cx, int y)
         {
             using var brush = new SolidBrush(color);
-            var sz = g.MeasureString(text, font);
-            g.DrawString(text, font, brush, cx - sz.Width / 2, y);
-            font.Dispose();
+            g.DrawString(text, font, brush, cx, y, _centerFormat);
         }
 
         private void DrawMenuButton(Graphics g, int cx, int y, string label, string sub, bool hovered)
@@ -335,17 +418,13 @@ namespace WinFormsApp1
             using (var bb = new SolidBrush(bgCol)) g.FillRoundedRect(bb, bx, y, bw, bh, 13);
             using (var bp = new Pen(brdCol, hovered ? 2.5f : 1.5f)) g.DrawRoundedRect(bp, bx, y, bw, bh, 13);
 
-            using (var lf = new Font("Impact", 21, FontStyle.Regular, GraphicsUnit.Pixel))
             using (var lb = new SolidBrush(hovered ? Color.FromArgb(255, 255, 235, 80) : Color.White))
             {
-                var ls = g.MeasureString(label, lf);
-                g.DrawString(label, lf, lb, cx - ls.Width / 2, y + 7);
+                g.DrawString(label, _fImpact21, lb, cx, y + 7, _centerFormat);
             }
-            using (var sf = new Font("Segoe UI", 12, FontStyle.Italic, GraphicsUnit.Pixel))
             using (var sb2 = new SolidBrush(Color.FromArgb(hovered ? 215 : 130, 180, 205, 255)))
             {
-                var ss = g.MeasureString(sub, sf);
-                g.DrawString(sub, sf, sb2, cx - ss.Width / 2, y + 37);
+                g.DrawString(sub, _fSegoe12Italic, sb2, cx, y + 37, _centerFormat);
             }
         }
 
@@ -467,66 +546,44 @@ namespace WinFormsApp1
 
         private static void DrawGroundTile(Graphics g, Rectangle sr)
         {
-            using (var b = new LinearGradientBrush(
-                    new Point(sr.X, sr.Y), new Point(sr.X, sr.Y + sr.Height),
-                    Color.FromArgb(255, 80, 60, 30), Color.FromArgb(255, 45, 30, 10)))
-                g.FillRectangle(b, sr.X, sr.Y, sr.Width, sr.Height);
+            // Use cached brushes/pens to avoid per-tile allocations
+            g.FillRectangle(_groundBrush, sr.X, sr.Y, sr.Width, sr.Height);
             // Grass top strip
-            using (var gp = new SolidBrush(Color.FromArgb(200, 70, 120, 40)))
-                g.FillRectangle(gp, sr.X, sr.Y, sr.Width, 5);
-            // Brick grid
-            using (var bp = new Pen(Color.FromArgb(50, 0, 0, 0), 1))
-                for (int bx = sr.X; bx < sr.Right; bx += 32)
-                    g.DrawLine(bp, bx, sr.Y, bx, sr.Bottom);
-            using (var border = new Pen(Color.FromArgb(160, 100, 75, 30), 1.5f))
-                g.DrawRectangle(border, sr.X, sr.Y, sr.Width, sr.Height);
+            g.FillRectangle(_grassBrush, sr.X, sr.Y, sr.Width, 5);
+            // Brick grid - reuse cached pen
+            for (int bx = sr.X; bx < sr.Right; bx += 32)
+                g.DrawLine(_gridPen, bx, sr.Y, bx, sr.Bottom);
+            g.DrawRectangle(_groundBorder, sr.X, sr.Y, sr.Width, sr.Height);
         }
 
         private static void DrawCeilingTile(Graphics g, Rectangle sr)
         {
-            using (var b = new LinearGradientBrush(
-                    new Point(sr.X, sr.Y), new Point(sr.X, sr.Y + sr.Height),
-                    Color.FromArgb(255, 35, 25, 55), Color.FromArgb(255, 55, 40, 80)))
-                g.FillRectangle(b, sr.X, sr.Y, sr.Width, sr.Height);
+            g.FillRectangle(_ceilingBrush, sr.X, sr.Y, sr.Width, sr.Height);
             // Stone bottom strip
-            using (var sp = new SolidBrush(Color.FromArgb(160, 80, 65, 100)))
-                g.FillRectangle(sp, sr.X, sr.Bottom - 5, sr.Width, 5);
-            using (var bp = new Pen(Color.FromArgb(40, 255, 255, 255), 1))
-                for (int bx = sr.X; bx < sr.Right; bx += 48)
-                    g.DrawLine(bp, bx, sr.Y, bx, sr.Bottom);
+            g.FillRectangle(_ceilingStone, sr.X, sr.Bottom - 5, sr.Width, 5);
+            for (int bx = sr.X; bx < sr.Right; bx += 48)
+                g.DrawLine(_ceilingGrid, bx, sr.Y, bx, sr.Bottom);
         }
 
         private static void DrawWallTile(Graphics g, Rectangle sr)
         {
-            using (var b = new LinearGradientBrush(
-                    new Point(sr.X, sr.Y), new Point(sr.X + sr.Width, sr.Y),
-                    Color.FromArgb(230, 60, 45, 80), Color.FromArgb(230, 40, 28, 58)))
-                g.FillRectangle(b, sr.X, sr.Y, sr.Width, sr.Height);
-            using (var hl = new Pen(Color.FromArgb(100, 150, 120, 200), 2))
-                g.DrawLine(hl, sr.X + 1, sr.Y, sr.X + 1, sr.Bottom);
+            g.FillRectangle(_wallBrush, sr.X, sr.Y, sr.Width, sr.Height);
+            g.DrawLine(_wallHigh, sr.X + 1, sr.Y, sr.X + 1, sr.Bottom);
             // Horizontal mortar lines
-            using (var mp = new Pen(Color.FromArgb(50, 0, 0, 0), 1))
-                for (int by = sr.Y; by < sr.Bottom; by += 20)
-                    g.DrawLine(mp, sr.X, by, sr.Right, by);
-            using (var border = new Pen(Color.FromArgb(140, 90, 70, 120), 1.5f))
-                g.DrawRectangle(border, sr.X, sr.Y, sr.Width, sr.Height);
+            for (int by = sr.Y; by < sr.Bottom; by += 20)
+                g.DrawLine(_gridPen, sr.X, by, sr.Right, by);
+            g.DrawRectangle(_platformBorder, sr.X, sr.Y, sr.Width, sr.Height);
         }
 
         private static void DrawPlatformTile(Graphics g, Rectangle sr)
         {
-            using (var b = new LinearGradientBrush(
-                    new Point(sr.X, sr.Y), new Point(sr.X, sr.Y + sr.Height),
-                    Color.FromArgb(220, 95, 72, 38), Color.FromArgb(220, 58, 40, 16)))
-                g.FillRectangle(b, sr.X, sr.Y, sr.Width, sr.Height);
+            g.FillRectangle(_groundBrush, sr.X, sr.Y, sr.Width, sr.Height);
             // Highlight top edge
-            using (var hl = new Pen(Color.FromArgb(170, 210, 170, 80), 3))
-                g.DrawLine(hl, sr.X, sr.Y + 1, sr.Right, sr.Y + 1);
+            g.DrawLine(_wallHigh, sr.X, sr.Y + 1, sr.Right, sr.Y + 1);
             // Brick marks
-            using (var bp = new Pen(Color.FromArgb(55, 0, 0, 0), 1))
-                for (int bx = sr.X + 20; bx < sr.Right; bx += 20)
-                    g.DrawLine(bp, bx, sr.Y, bx, sr.Bottom);
-            using (var border = new Pen(Color.FromArgb(170, 125, 95, 42), 1.5f))
-                g.DrawRectangle(border, sr.X, sr.Y, sr.Width, sr.Height);
+            for (int bx = sr.X + 20; bx < sr.Right; bx += 20)
+                g.DrawLine(_gridPen, bx, sr.Y, bx, sr.Bottom);
+            g.DrawRectangle(_platformBorder, sr.X, sr.Y, sr.Width, sr.Height);
         }
 
         private void DrawCoins(Graphics g, int scrollX)
@@ -563,6 +620,7 @@ namespace WinFormsApp1
         private void DrawRope(Graphics g, int scrollX)
         {
             if (_player == null) return;
+            if (!_player.EnableGrapple) return;
             bool ropeVisible = _player.Projectile.IsActive
                             || _player.Condition == Condition.Attached;
             if (!ropeVisible) return;
@@ -603,6 +661,7 @@ namespace WinFormsApp1
         private void DrawAimLaser(Graphics g, int scrollX)
         {
             if (_player == null) return;
+            if (!_player.EnableGrapple) return;
             if (_player.Projectile.IsActive || _player.Condition == Condition.Attached) return;
 
             // Player center in screen space
@@ -680,7 +739,18 @@ namespace WinFormsApp1
             {
                 // Fallback: colored rectangle
                 using var fb = new SolidBrush(_player.IsDead ? Color.Red : Color.DodgerBlue);
-                g.FillRectangle(fb, sx, sy, PW, PH);
+                if (_player.GravityScale < 0)
+                {
+                    // draw rotated upside-down
+                    g.TranslateTransform(sx + PW / 2f, sy + PH / 2f);
+                    g.RotateTransform(180);
+                    g.FillRectangle(fb, -PW / 2f, -PH / 2f, PW, PH);
+                    g.ResetTransform();
+                }
+                else
+                {
+                    g.FillRectangle(fb, sx, sy, PW, PH);
+                }
                 return;
             }
 
@@ -697,10 +767,24 @@ namespace WinFormsApp1
             };
             int col = Math.Min(_animCol, maxCol);
 
-            g.DrawImage(Resources.digger,
-                new Rectangle(sx, sy, PW, PH),
-                new Rectangle(col * dw, _animRow * dh, dw, dh),
-                GraphicsUnit.Pixel);
+            if (_player.GravityScale < 0)
+            {
+                // rotate sprite 180 degrees around its center
+                g.TranslateTransform(sx + PW / 2f, sy + PH / 2f);
+                g.RotateTransform(180);
+                g.DrawImage(Resources.digger,
+                    new Rectangle(-PW / 2, -PH / 2, PW, PH),
+                    new Rectangle(col * dw, _animRow * dh, dw, dh),
+                    GraphicsUnit.Pixel);
+                g.ResetTransform();
+            }
+            else
+            {
+                g.DrawImage(Resources.digger,
+                    new Rectangle(sx, sy, PW, PH),
+                    new Rectangle(col * dw, _animRow * dh, dw, dh),
+                    GraphicsUnit.Pixel);
+            }
         }
 
         private void DrawHUD(Graphics g)
@@ -746,10 +830,9 @@ namespace WinFormsApp1
             }
 
             // Controls reminder (small, bottom-left)
-            using (var cf = new Font("Segoe UI", 11, FontStyle.Regular, GraphicsUnit.Pixel))
             using (var cb2 = new SolidBrush(Color.FromArgb(80, 200, 200, 200)))
                 g.DrawString("[W] Hook   [A/D] Aim   [Space] Detach   [Esc] Menu",
-                    cf, cb2, 10, ClientSize.Height - 22);
+                    _fSegoe11, cb2, 10, ClientSize.Height - 22);
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -822,35 +905,29 @@ namespace WinFormsApp1
             int ia = (int)(a * 255);
 
             // Звёздочки-конфетти (статичные но красивые)
-            var rng = new Random(77);
+            // Stars (use cached RNG to avoid allocation)
             for (int i = 0; i < 60; i++)
             {
-                float sx = rng.Next(w), sy = rng.Next(h);
-                float sz = (float)(rng.NextDouble() * 6 + 2);
-                int ca = (int)(a * rng.Next(80, 200));
+                float sx = _rng.Next(w), sy = _rng.Next(h);
+                float sz = (float)(_rng.NextDouble() * 6 + 2);
+                int ca = (int)(a * _rng.Next(80, 200));
                 var col = Color.FromArgb(ca,
-                    rng.Next(180, 255), rng.Next(140, 220), rng.Next(0, 80));
+                    _rng.Next(180, 255), _rng.Next(140, 220), _rng.Next(0, 80));
                 using var cb2 = new SolidBrush(col);
                 g.FillEllipse(cb2, sx - sz / 2, sy - sz / 2, sz, sz);
             }
 
-            // "ВЫ ВЫИГРАЛИ!"
-            using (var tf = new Font("Impact", 80, FontStyle.Regular, GraphicsUnit.Pixel))
-            {
-                string txt = "ВЫ ВЫИГРАЛИ!";
-                var sz = g.MeasureString(txt, tf);
-                float tx = cx - sz.Width / 2;
-                float ty = cy2 - sz.Height / 2 - 70;
-
-                using (var sh = new SolidBrush(Color.FromArgb(ia, 120, 90, 0)))
-                    g.DrawString(txt, tf, sh, tx + 4, ty + 4);
-                using (var grad = new LinearGradientBrush(
-                        new Point((int)tx, (int)ty),
-                        new Point((int)tx, (int)(ty + sz.Height)),
+            // "YOU WON!" — use cached fonts and centered drawing to avoid MeasureString
+            string txt = "ВЫ ВЫИГРАЛИ!";
+            float ty = cy2 - 40; // approximate vertical offset
+            using (var sh = new SolidBrush(Color.FromArgb(ia, 120, 90, 0)))
+                g.DrawString(txt, _fImpact80, sh, cx + 4, ty + 4, _centerFormat);
+            using (var grad = new LinearGradientBrush(
+                        new Point(cx - 200, (int)ty),
+                        new Point(cx + 200, (int)ty + 200),
                         Color.FromArgb(ia, 255, 235, 80),
                         Color.FromArgb(ia, 255, 150, 0)))
-                    g.DrawString(txt, tf, grad, tx, ty);
-            }
+                g.DrawString(txt, _fImpact80, grad, cx, ty, _centerFormat);
 
             // Счёт монет
             if (a > 0.4f)

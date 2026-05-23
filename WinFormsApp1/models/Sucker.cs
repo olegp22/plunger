@@ -6,6 +6,11 @@ namespace Plunger.Models
 
     public class Sucker
     {
+        // Observer: notify views/presenters about state changes (position, condition, coins, etc.)
+        public event Action? StateChanged;
+
+        private void NotifyStateChanged() => StateChanged?.Invoke();
+
         // ── Public state ──────────────────────────────────────────────────────
         public Plunger.Point Location { get; private set; }
         public Condition Condition { get; private set; }
@@ -14,6 +19,8 @@ namespace Plunger.Models
         public bool IsDead { get; private set; }
         public PlungerProjectile Projectile { get; private set; }
         public bool CanGrappleGround { get; set; } = true;
+        // Enable full grapple mechanic (launching, attaching). Can be disabled for special levels.
+        public bool EnableGrapple { get; set; } = true;
 
         public double RunSpeed { get; set; } = GameConfig.RunSpeedLevel1;
 
@@ -36,6 +43,10 @@ namespace Plunger.Models
         // Начальная вертикальная скорость прыжка (px за тик). Отрицательное = вверх.
         // Делается присваиваемой свойством чтобы можно было настроить значение для каждого уровня.
         public double JumpVY { get; set; } = GameConfig.JumpVYLevel1;
+        // Gravity scale: 1.0 = normal downwards gravity, -1.0 = inverted gravity.
+        public double GravityScale { get; private set; } = 1.0;
+        // Разрешено ли переключать гравитацию (включается только для уровня 3)
+        public bool CanInvertGravity { get; set; } = false;
 
         // ── Attached: простой таймер ──────────────────────────────────────────
         // AttachMaxTicks — сколько тиков максимум висим.
@@ -72,7 +83,12 @@ namespace Plunger.Models
         public void Jump()
         {
             if (Condition == Condition.Run)
+            {
+                // Request jump: initial vertical velocity will be set in UpdatePosition
+                // Jump direction depends on current gravity (away from surface)
                 _jumpRequested = true;
+                NotifyStateChanged();
+            }
         }
 
         public void Detach()
@@ -83,28 +99,53 @@ namespace Plunger.Models
             Projectile.Stop();
             SomersaultThisFrame = true;
             _attachTicks = 0;
+            NotifyStateChanged();
+        }
+
+        // Переключить направление гравитации.
+        public void ToggleGravity()
+        {
+            if (!CanInvertGravity) return;
+            GravityScale = -GravityScale;
+            // Визуальный эффект — сальто
+            SomersaultThisFrame = true;
+            // Инвертируем текущую вертикальную скорость so motion continues naturally
+            _vy = -_vy;
+            // Preserve running horizontal speed
+            _vx = RunSpeed;
+
+            // If running on surface, start a quick but non-instant transfer towards the opposite support
+            if (Condition == Condition.Run)
+            {
+                // Enter Fall so physics moves the player toward new support
+                Condition = Condition.Fall;
+                // Give a strong initial velocity in gravity direction to move quickly (but not teleport)
+                _vy = GameConfig.MaxFallSpeed * GravityScale * 0.9; // sign follows GravityScale
+                // Preserve horizontal speed during the transit
+                _airborneFromJump = true;
+            }
+            NotifyStateChanged();
         }
 
         public void Shoot()
         {
+            if (!EnableGrapple) return;
             if (Condition == Condition.Attached) { Detach(); return; }
             if (Projectile.IsActive) { Projectile.Stop(); return; }
             var c = new Plunger.Point(Location.X + SpriteW / 2, Location.Y + SpriteH / 2);
             Projectile.Launch(c, AimAngle);
+            NotifyStateChanged();
         }
 
-        // ── Главный апдейт ────────────────────────────────────────────────────
         public void UpdatePosition(LevelData level)
         {
             if (IsDead) return;
             _justDetached = false;
 
-            // 1. Снаряд движется КАЖДЫЙ ТИК пока активен
             if (Projectile.IsActive)
             {
                 Projectile.Update();
 
-                // Присоска прикрепляется ТОЛЬКО если мы ещё не Attached
                 if (Condition != Condition.Attached)
                     TryAttach(level);
 
@@ -116,35 +157,36 @@ namespace Plunger.Models
             if (_jumpRequested && Condition == Condition.Run)
             {
                 _jumpRequested = false;
-                _vy = JumpVY;
+                // Initial vertical velocity away from the current surface: depends on gravity direction
+                _vy = -Math.Sign(GravityScale) * Math.Abs(JumpVY);
+                // Preserve running horizontal speed
                 _vx = RunSpeed;
-                // Помечаем что это именно прыжок — сохраняем горизонтальную скорость
+
                 _airborneFromJump = true;
                 Condition = Condition.Fall;
                 jumping = true;
             }
             _jumpRequested = false;
 
-            // 3. Вычисляем смещение
+            
             double dx = 0, dy = 0;
 
             switch (Condition)
             {
                 case Condition.Run:
-                    // ВАЖНО: не трогаем _vy здесь — он уже может быть установлен прыжком
+                    
                     _vx = RunSpeed;
-                    _vy = 0;    // сброс vy при беге (не прыжке)
+                    _vy = 0;    
                     dx = _vx;
                     break;
 
                 case Condition.Attached:
-                    // Счётчик растёт каждый тик — НИКАКИХ сбросов здесь
                     _attachTicks++;
 
                     if (_attachTicks >= AttachMaxTicks)
                     {
-                        // Время вышло — принудительный отцеп
-                        ForceDetach();
+                        // Время вышло — принудительный отцеп (используем Detach чтобы гарантировать somersault)
+                        Detach();
                         break;
                     }
 
@@ -152,10 +194,10 @@ namespace Plunger.Models
                     double toY = Projectile.Location.Y - (Location.Y + SpriteH / 2.0);
                     double dist = Math.Sqrt(toX * toX + toY * toY);
 
-                    if (dist < 10.0)
+                    if (dist < 100.0)
                     {
                         // Добрались до точки — отцеп
-                        ForceDetach();
+                        Detach();
                         break;
                     }
 
@@ -169,8 +211,12 @@ namespace Plunger.Models
                 case Condition.Fall:
                     if (!jumping)
                     {
-                        _vy = Math.Min(_vy + GameConfig.Gravity, GameConfig.MaxFallSpeed);
-                        // Если мы в воздухе из-за прыжка — не гасим горизонтальную скорость
+                        // Применяем гравитацию с учётом направления (GravityScale может быть -1)
+                        _vy += GameConfig.Gravity * GravityScale;
+                        if (GravityScale > 0)
+                            _vy = Math.Min(_vy, GameConfig.MaxFallSpeed);
+                        else
+                            _vy = Math.Max(_vy, -GameConfig.MaxFallSpeed);
                         if (!_airborneFromJump)
                             _vx *= GameConfig.AirFriction;
                     }
@@ -188,18 +234,31 @@ namespace Plunger.Models
             Location = new Plunger.Point(nx, ny);
 
             if (blockedX) _vx = 0;
-            if (blockedY && _vy > 0) _vy = 0;   // гасим только падение, не прыжок вверх
 
-            // Посадка только из Fall
-            if (landed && Condition == Condition.Fall)
+            // Гасим вертикальную скорость в направлении удара (учитываем направление гравитации)
+            if (blockedY)
             {
-                Condition = Condition.Run;
-                _vx = RunSpeed;
-                _vy = 0;
-                _airborneFromJump = false;
+                // Если столкнулись в направлении текущей гравитации — это посадка/опора
+                bool hitSupport = (GravityScale > 0 && _vy >= 0) || (GravityScale < 0 && _vy <= 0);
+                if (hitSupport)
+                {
+                    // Считаем это посадкой: возвращаем состояние Run и фиксируем горизонтальную скорость
+                    if (Condition == Condition.Fall)
+                    {
+                        Condition = Condition.Run;
+                        _vx = RunSpeed;
+                        _vy = 0;
+                        _airborneFromJump = false;
+                    }
+                }
+                else
+                {
+                    // Удар в противоположном направлении — просто глушим скорость в этом направлении
+                    if (GravityScale > 0 && _vy > 0) _vy = 0;
+                    else if (GravityScale < 0 && _vy < 0) _vy = 0;
+                }
             }
 
-            // 5. Жёсткий Y-зажим
             int floorTop = LevelBuilder.GetFloorTop(level);
             int ceilBot = LevelBuilder.GetCeilBot(level);
             int clampY = Math.Max(ceilBot, Math.Min(floorTop - CollisionH, ny));
@@ -223,7 +282,6 @@ namespace Plunger.Models
             SomersaultThisFrame = true;
             _justDetached = true;
             _attachTicks = 0;
-            // Отцеп — это не прыжок
             _airborneFromJump = false;
         }
 
@@ -258,7 +316,6 @@ namespace Plunger.Models
             int ceilBot = LevelBuilder.GetCeilBot(level);
             int floorTop = LevelBuilder.GetFloorTop(level);
 
-            // Pass 1: Y
             var boxY = new Rectangle(cx0, cy, CollisionW, CollisionH);
             foreach (var tile in level.Tiles)
             {
@@ -284,7 +341,6 @@ namespace Plunger.Models
             if (cy + CollisionH > floorTop)
             { cy = floorTop - CollisionH; blockedY = true; landed = true; }
 
-            // Pass 2: X
             var boxX = new Rectangle(cx, cy, CollisionW, CollisionH);
             foreach (var tile in level.Tiles)
             {
@@ -317,17 +373,29 @@ namespace Plunger.Models
             }
             if (cx < LevelBuilder.WallW) { cx = LevelBuilder.WallW; blockedX = true; }
 
-            // Ground-support
             if (!landed && Condition == Condition.Run)
             {
-                var feet = new Rectangle(cx + 4, cy + CollisionH, CollisionW - 8, 4);
                 bool sup = false;
-                foreach (var tile in level.Tiles)
+                if (GravityScale > 0)
                 {
-                    if (tile.Type == TileType.Wall || tile.Type == TileType.Ceiling) continue;
-                    if (feet.IntersectsWith(tile.GetBounds())) { sup = true; break; }
+                    var feet = new Rectangle(cx + 4, cy + CollisionH, CollisionW - 8, 4);
+                    foreach (var tile in level.Tiles)
+                    {
+                        if (tile.Type == TileType.Wall || tile.Type == TileType.Ceiling) continue;
+                        if (feet.IntersectsWith(tile.GetBounds())) { sup = true; break; }
+                    }
+                    if (cy + CollisionH >= floorTop) sup = true;
                 }
-                if (cy + CollisionH >= floorTop) sup = true;
+                else
+                {
+                    var head = new Rectangle(cx + 4, cy - 4, CollisionW - 8, 4);
+                    foreach (var tile in level.Tiles)
+                    {
+                        if (tile.Type == TileType.Wall || tile.Type == TileType.Ground) continue;
+                        if (head.IntersectsWith(tile.GetBounds())) { sup = true; break; }
+                    }
+                    if (cy <= ceilBot) sup = true;
+                }
                 if (!sup) Condition = Condition.Fall;
             }
 
@@ -338,6 +406,7 @@ namespace Plunger.Models
         private void TryAttach(LevelData level)
         {
             if (!Projectile.IsActive) return;
+            if (!EnableGrapple) return; // disable attaching when grapple is turned off
             var pb = Projectile.GetBounds();
 
             foreach (var tile in level.Tiles)
@@ -357,8 +426,7 @@ namespace Plunger.Models
                         px = (px < tb.Left + tb.Width / 2) ? tb.Left : tb.Right; break;
                 }
                 Projectile.PinTo(new Plunger.Point(px, py));
-                // _attachTicks НЕ сбрасывается при повторном пересечении того же тайла
-                // Сброс только при первом присоединении (Condition ещё не Attached)
+
                 if (Condition != Condition.Attached)
                 {
                     Condition = Condition.Attached;
@@ -393,7 +461,7 @@ namespace Plunger.Models
         }
 
         public void Kill() { IsDead = true; }
-        public void AddCoin() => CoinsCollected++;
+        public void AddCoin() { CoinsCollected++; NotifyStateChanged(); }
         public Rectangle GetBounds()
             => new Rectangle(Location.X, Location.Y, SpriteW, SpriteH);
         public Rectangle GetCollisionBox()

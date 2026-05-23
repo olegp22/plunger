@@ -13,7 +13,6 @@ namespace Plunger.Models
 
         public List<Tile> Tiles { get; } = new List<Tile>();
         public List<Coin> Coins { get; } = new List<Coin>();
-        // Флаги уровня — при касании игрока вызывают победу
         public List<Plunger.Models.Common.Rectangle> Flags { get; } = new List<Plunger.Models.Common.Rectangle>();
 
         public LevelData(int worldWidth, int worldHeight, Plunger.Point playerStart)

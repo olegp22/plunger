@@ -1,6 +1,3 @@
-// models/LevelBuilder.cs
-// Загружает уровни из .txt файлов через LevelParser.
-// Также предоставляет хелперы для границ мира.
 namespace Plunger.Models
 {
     using System;

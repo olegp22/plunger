@@ -11,6 +11,8 @@ namespace Plunger.Views
         event Action TimerTick;
         event Action<Keys> KeyDown;
         event Action<Keys> KeyUp;
+        // Mouse clicks forwarded to presenter (button: Left/Right/Middle)
+        event Action<MouseButtons> MouseClick;
 
         // Presenter → View
         void SetLevel(Sucker player, LevelData level, Camera camera);

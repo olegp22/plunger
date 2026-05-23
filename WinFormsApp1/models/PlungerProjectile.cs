@@ -1,4 +1,3 @@
-// models/PlungerProjectile.cs
 namespace Plunger.Models
 {
     using System;
@@ -11,7 +10,6 @@ namespace Plunger.Models
         public Plunger.Point Location => new Plunger.Point((int)_x, (int)_y);
         public bool IsActive { get; private set; }
 
-        // Fast enough to feel instant across the screen
         public static float Speed => GameConfig.ProjectileSpeed;
         private const int Size = 14;
 
