@@ -1,5 +1,5 @@
 // Form1_Designer.cs
-namespace WinFormsApp1
+namespace WinFormsApp1.Views
 {
     partial class Form1
     {

@@ -10,7 +10,7 @@ using Plunger.Presenters;
 using Plunger.Views;
 using WinFormsApp1.Properties;
 
-namespace WinFormsApp1
+namespace WinFormsApp1.Views
 {
     public partial class Form1 : Form, IMainView
     {
@@ -919,15 +919,12 @@ namespace WinFormsApp1
 
             // "YOU WON!" — use cached fonts and centered drawing to avoid MeasureString
             string txt = "ВЫ ВЫИГРАЛИ!";
-            float ty = cy2 - 40; // approximate vertical offset
+            // move title upward to avoid overlapping statistics
+            float ty = cy2 - 120; // moved up
             using (var sh = new SolidBrush(Color.FromArgb(ia, 120, 90, 0)))
                 g.DrawString(txt, _fImpact80, sh, cx + 4, ty + 4, _centerFormat);
-            using (var grad = new LinearGradientBrush(
-                        new Point(cx - 200, (int)ty),
-                        new Point(cx + 200, (int)ty + 200),
-                        Color.FromArgb(ia, 255, 235, 80),
-                        Color.FromArgb(ia, 255, 150, 0)))
-                g.DrawString(txt, _fImpact80, grad, cx, ty, _centerFormat);
+            using (var fill = new SolidBrush(Color.FromArgb(ia, 255, 235, 80)))
+                g.DrawString(txt, _fImpact80, fill, cx, ty, _centerFormat);
 
             // Счёт монет
             if (a > 0.4f)

@@ -217,8 +217,6 @@ namespace Plunger.Models
                             _vy = Math.Min(_vy, GameConfig.MaxFallSpeed);
                         else
                             _vy = Math.Max(_vy, -GameConfig.MaxFallSpeed);
-                        if (!_airborneFromJump)
-                            _vx *= GameConfig.AirFriction;
                     }
                     dx = _vx;
                     dy = _vy;
