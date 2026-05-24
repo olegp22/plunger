@@ -1,6 +1,3 @@
-// models/Tile.cs
-// A solid rectangular tile in world space.
-// TileType is defined in Enums.cs — not here.
 namespace Plunger.Models
 {
     using Plunger.Models.Common;

@@ -1,4 +1,3 @@
-// Form1_Designer.cs
 namespace WinFormsApp1.Views
 {
     partial class Form1
@@ -19,15 +18,11 @@ namespace WinFormsApp1.Views
             gameTimer = new System.Windows.Forms.Timer(components);
             SuspendLayout();
 
-            // ~30 fps (stable on slower machines)
             gameTimer.Interval = 33;
-            // object? sender — совпадает с сигнатурой gameTimer_Tick в Form1.cs
             gameTimer.Tick += new System.EventHandler(gameTimer_Tick);
 
             AutoScaleDimensions = new System.Drawing.SizeF(8F, 20F);
             AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-
-            // Полноэкранный режим без рамки
             FormBorderStyle = System.Windows.Forms.FormBorderStyle.None;
             WindowState = System.Windows.Forms.FormWindowState.Maximized;
 
@@ -36,7 +31,6 @@ namespace WinFormsApp1.Views
             Name = "Form1";
             Text = "Plunger Dash";
 
-            // object? sender — совпадает с сигнатурой Form1_Load в Form1.cs
             Load += new System.EventHandler(Form1_Load);
 
             ResumeLayout(false);

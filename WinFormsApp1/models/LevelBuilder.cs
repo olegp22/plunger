@@ -7,9 +7,8 @@ namespace Plunger.Models
     {
         public const int ScreenW = 1315;
         public const int ScreenH = 558;
-        public const int WallW = LevelParser.CellW;  // ширина левой стены = ширина ячейки
+        public const int WallW = LevelParser.CellW;  
 
-        // Папка с уровнями: рядом с exe
         private static string LevelsDir =>
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "levels");
 
@@ -19,9 +18,7 @@ namespace Plunger.Models
         public static LevelData BuildLevel2()
             => LevelParser.Parse(Path.Combine(LevelsDir, "level2.txt"));
 
-        // ── Хелперы для получения границ мира из данных уровня ───────────────
-        // Ищем самый верхний Ceiling тайл и самый нижний Ground тайл.
-        // Если тайлов нет — возвращаем дефолты.
+        
 
         public static int GetCeilBot(LevelData level)
         {
@@ -38,12 +35,10 @@ namespace Plunger.Models
             foreach (var t in level.Tiles)
                 if (t.Type == TileType.Ground || t.Type == TileType.Floor)
                     maxTop = Math.Max(maxTop, t.GetBounds().Top);
-            // fallback: нижняя граница мира
             return maxTop == int.MinValue ? level.WorldHeight - LevelParser.CellH : maxTop;
         }
 
-        // Для обратной совместимости с хардкодными ссылками в GamePresenter
-        public static int CeilBot => LevelParser.CellH;     // приблизительно
+        public static int CeilBot => LevelParser.CellH;     
         public static int FloorTop => ScreenH - LevelParser.CellH * 2;
     }
 }

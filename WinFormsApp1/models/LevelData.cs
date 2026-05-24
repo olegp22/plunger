@@ -1,5 +1,3 @@
-// models/LevelData.cs
-// All world geometry + coins for one level.
 using System.Collections.Generic;
 using Plunger.Models.Common;
 

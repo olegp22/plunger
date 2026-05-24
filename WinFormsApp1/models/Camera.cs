@@ -1,6 +1,3 @@
-// models/Camera.cs
-// Камера с автоматическим скроллингом.
-// Скорости настраиваются через GameConfig.
 namespace Plunger.Models
 {
     using System;

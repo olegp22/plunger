@@ -22,11 +22,9 @@ namespace WinFormsApp1.Tests
         {
             var s = new Sucker(new Plunger.Point(0, 0));
             s.Jump();
-            // simulate a minimal level with floor so UpdatePosition processes jump
             var level = new LevelData(800, 600, new Plunger.Point(0, 0));
             level.AddTile(0, 580, 800, 20, TileType.Floor);
             s.UpdatePosition(level);
-            // After update, if jump was applied, Condition should be Fall
             Assert.NotEqual(Condition.Run, s.Condition);
         }
 

@@ -1,6 +1,4 @@
-// Form1.cs — View layer (MVP)
-// Responsibilities: rendering, input event forwarding, IMainView implementation.
-// Contains ZERO game logic — all logic lives in GamePresenter.
+
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -14,7 +12,6 @@ namespace WinFormsApp1.Views
 {
     public partial class Form1 : Form, IMainView
     {
-        // Performance: cache frequently used fonts/formatters and pens/brushes to avoid allocations every paint
         private static readonly Random _rng = new Random(42);
         private static readonly StringFormat _centerFormat = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Near };
         private static readonly Font _fImpact54 = new Font("Impact", 54, FontStyle.Regular, GraphicsUnit.Pixel);
@@ -29,14 +26,12 @@ namespace WinFormsApp1.Views
         private static readonly Font _fImpact80 = new Font("Impact", 80, FontStyle.Regular, GraphicsUnit.Pixel);
         private static readonly Font _fSegoe20 = new Font("Segoe UI", 20, FontStyle.Regular, GraphicsUnit.Pixel);
         private static readonly Font _fImpact36 = new Font("Impact", 36, FontStyle.Regular, GraphicsUnit.Pixel);
-        // Simple runtime profiler / FPS counter
         private readonly System.Diagnostics.Stopwatch _sw = new System.Diagnostics.Stopwatch();
         private long _lastUpdateMs = 0;
         private long _lastDrawMs = 0;
         private int _frameCount = 0;
         private int _lastFps = 0;
         private long _fpsTimerStart = 0;
-        // Cached pens/brushes
         private static readonly Pen _ropePen = new Pen(Color.FromArgb(210, 140, 90, 40), 3f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
         private static readonly Pen _aimPen = new Pen(Color.FromArgb(180, 100, 255, 100), 1.8f) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
         private static readonly SolidBrush _groundBrush = new SolidBrush(Color.FromArgb(255, 80, 60, 30));
@@ -49,21 +44,13 @@ namespace WinFormsApp1.Views
         private static readonly Pen _wallHigh = new Pen(Color.FromArgb(100, 150, 120, 200), 2);
         private static readonly Pen _platformBorder = new Pen(Color.FromArgb(170, 125, 95, 42), 1.5f);
         private static readonly Pen _gridPen = new Pen(Color.FromArgb(50, 0, 0, 0), 1);
-        // Precomputed menu stars to avoid per-frame allocations
         private readonly (float X, float Y, float Size, Color Col)[] _menuStars;
 
-        // ═════════════════════════════════════════════════════════════════════
-        // IMainView — events (View → Presenter)
-        // ═════════════════════════════════════════════════════════════════════
         public event Action? TimerTick;
         public event Action<Keys>? KeyDown;
         public event Action<Keys>? KeyUp;
-        // Mouse click event for presenter (separate from Control.MouseClick)
         public new event Action<MouseButtons>? MouseClick;
 
-        // ═════════════════════════════════════════════════════════════════════
-        // IMainView — HUD data (Presenter writes; OnPaint reads)
-        // ═════════════════════════════════════════════════════════════════════
         private int _levelTicksRemaining = GamePresenter.LevelDurationTicks;
         private int _totalCoins = 0;
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
@@ -71,63 +58,45 @@ namespace WinFormsApp1.Views
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public int TotalCoins { get => _totalCoins; set => _totalCoins = value; }
 
-        // ═════════════════════════════════════════════════════════════════════
-        // Rendering state
-        // ═════════════════════════════════════════════════════════════════════
-
-        // Game-object references (set by Presenter via SetLevel)
         private Sucker? _player = null;
         private LevelData? _level = null;
         private Camera? _camera = null;
         private int _score = 0;
 
-        // ── Sprite sheet: digger.png — 4 rows × 4 cols ───────────────────────
         private const int SpriteRows = 4, SpriteCols = 4;
         private const int RowRun = 0, RowGrapple = 1, RowSomersault = 2, RowFall = 3;
         private const int RunFrames = 4, GrappleFrames = 4;
         private const int SomersaultFrames = 3, FallFrames = 4;
 
-        // ── Animation state ───────────────────────────────────────────────────
         private int _animRow = RowRun, _animCol = 0, _frameTimer = 0;
-        private const int FrameDelay = 5;   // ticks per frame
+        private const int FrameDelay = 5;
         private bool _isSomersaulting = false;
 
-        // ── Coin animation ────────────────────────────────────────────────────
         private const int CoinCols = 8;
         private int _coinFrame = 0, _coinTimer = 0;
 
-        // ── Plunger head sprite ───────────────────────────────────────────────
         private const int VantusCols = 2;
 
-        // ── Player render size & center offset ───────────────────────────────
-        private const int PW = 90, PH = 110;    // render size
-        private const int PCX = PW / 2, PCY = PH / 2;   // center offset
+        private const int PW = 90, PH = 110;
+        private const int PCX = PW / 2, PCY = PH / 2;
 
-        // ── UI mode ───────────────────────────────────────────────────────────
         private enum ScreenMode { Menu, Game, Death, Victory }
         private ScreenMode _screen = ScreenMode.Menu;
         private bool _showMenu => _screen == ScreenMode.Menu;
-        private int _menuHover = -1;   // -1=none, 0=lvl1, 1=lvl2, 2=lvl3
+        private int _menuHover = -1;
 
-        // Данные для экрана победы
         private int _victoryCoins = 0;
         private int _victoryTotal = 0;
 
-        // Анимация оверлея: 0..1 alpha для fade-in
         private float _overlayAlpha = 0f;
         private const float FadeSpeed = 0.035f;
 
-        // Presenter (assigned in Form1_Load before any paint)
         private GamePresenter _presenter = null!;
 
-        // ═════════════════════════════════════════════════════════════════════
-        // Construction
-        // ═════════════════════════════════════════════════════════════════════
         public Form1()
         {
             InitializeComponent();
 
-            // Explicit delegate casts → suppress CS8622 nullable-sender warnings
             base.KeyDown += new KeyEventHandler(HandleKeyDown);
             base.KeyUp += new KeyEventHandler(HandleKeyUp);
             MouseMove += new MouseEventHandler(HandleMouseMove);
@@ -137,7 +106,6 @@ namespace WinFormsApp1.Views
                      ControlStyles.AllPaintingInWmPaint |
                      ControlStyles.UserPaint, true);
 
-            // Precompute stars for menu background
             _menuStars = new (float X, float Y, float Size, Color Col)[90];
             for (int i = 0; i < _menuStars.Length; i++)
             {
@@ -153,14 +121,11 @@ namespace WinFormsApp1.Views
 
             foreach (var f in _level.Flags)
             {
-                // f is Plunger.Models.Common.Rectangle — build a System.Drawing.Rectangle for rendering
                 var sr = new System.Drawing.Rectangle(f.X - scrollX, f.Y, f.Width, f.Height);
                 if (sr.Right < 0 || sr.Left > ClientSize.Width) continue;
 
-                // Pole
                 using (var pb = new SolidBrush(Color.SaddleBrown))
                     g.FillRectangle(pb, sr.X + 6, sr.Y + 4, 4, sr.Height - 8);
-                // Flag triangle
                 using (var flagB = new SolidBrush(Color.FromArgb(230, 220, 40)))
                 {
                     var p1 = new Point(sr.X + 10, sr.Y + 8);
@@ -173,19 +138,14 @@ namespace WinFormsApp1.Views
             }
         }
 
-        // Form1_Load wired by Designer (new EventHandler(Form1_Load))
         private void Form1_Load(object sender, EventArgs e)
         {
             _presenter = new GamePresenter(this);
         }
 
-        // gameTimer_Tick wired by Designer (new EventHandler(gameTimer_Tick))
         private void gameTimer_Tick(object sender, EventArgs e)
             => TimerTick?.Invoke();
 
-        // ═════════════════════════════════════════════════════════════════════
-        // Input — forward raw keys to Presenter via IMainView events
-        // ═════════════════════════════════════════════════════════════════════
         private void HandleKeyDown(object? sender, KeyEventArgs e)
             => KeyDown?.Invoke(e.KeyCode);
 
@@ -210,7 +170,6 @@ namespace WinFormsApp1.Views
                 return;
             }
 
-            // In-game: forward mouse clicks to presenter (e.g., LMB to toggle gravity on level 3)
             MouseClick?.Invoke(e.Button);
         }
 
@@ -223,12 +182,8 @@ namespace WinFormsApp1.Views
             return -1;
         }
 
-        // ═════════════════════════════════════════════════════════════════════
-        // IMainView implementation
-        // ═════════════════════════════════════════════════════════════════════
         public void SetLevel(Sucker player, LevelData level, Camera camera)
         {
-            // Unsubscribe previous player events
             if (_player != null)
                 _player.StateChanged -= Player_StateChanged;
 
@@ -236,11 +191,9 @@ namespace WinFormsApp1.Views
             _level = level;
             _camera = camera;
             _score = 0;
-            // Subscribe to model changes (observer)
             if (_player != null)
                 _player.StateChanged += Player_StateChanged;
 
-            // Reset animation
             _animRow = RowRun; _animCol = 0; _frameTimer = 0;
             _isSomersaulting = false;
         }
@@ -248,7 +201,6 @@ namespace WinFormsApp1.Views
         private void Player_StateChanged()
         {
             if (_player == null) return;
-            // Update HUD data from model and request redraw
             _score = _player.CoinsCollected;
             Text = $"Plunger Dash — {_score} coins";
             Invalidate();
@@ -295,9 +247,6 @@ namespace WinFormsApp1.Views
 
         public void RefreshView() => Invalidate();
 
-        // ═════════════════════════════════════════════════════════════════════
-        // Paint dispatcher
-        // ═════════════════════════════════════════════════════════════════════
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
@@ -309,7 +258,6 @@ namespace WinFormsApp1.Views
             if (_screen == ScreenMode.Death) { DrawDeath(g); return; }
             if (_screen == ScreenMode.Victory) { DrawVictory(g); return; }
 
-            // ── Background ────────────────────────────────────────────────────
             if (Resources.background != null)
                 g.DrawImage(Resources.background,
                     new Rectangle(0, 0, ClientSize.Width, ClientSize.Height));
@@ -319,14 +267,11 @@ namespace WinFormsApp1.Views
             if (_player == null || _level == null || _camera == null) return;
             int scrollX = _camera.ScrollX;
 
-            // Simple FPS/update timing
             if (!_sw.IsRunning) { _sw.Start(); _fpsTimerStart = _sw.ElapsedMilliseconds; }
             long t0 = _sw.ElapsedMilliseconds;
 
-            // ── Update animation state (read-only from model) ─────────────────
             StepAnimation();
 
-            // ── Render world elements, all offset by -scrollX ─────────────────
             DrawTiles(g, scrollX);
             DrawFlags(g, scrollX);
             DrawCoins(g, scrollX);
@@ -344,7 +289,6 @@ namespace WinFormsApp1.Views
                 _frameCount = 0;
                 _fpsTimerStart = t1;
             }
-            // draw FPS in top-left
             using (var fb = new SolidBrush(Color.White))
             {
                 string info = $"FPS: {_lastFps}  Draw: {_lastDrawMs}ms";
@@ -353,18 +297,13 @@ namespace WinFormsApp1.Views
             }
         }
 
-        // ═════════════════════════════════════════════════════════════════════
-        // MENU
-        // ═════════════════════════════════════════════════════════════════════
         private void DrawMenu(Graphics g)
         {
             int w = ClientSize.Width, h = ClientSize.Height, cx = w / 2;
 
-            // Dark background (avoid per-frame gradient allocation)
             using (var bg = new SolidBrush(Color.FromArgb(28, 16, 55)))
                 g.FillRectangle(bg, 0, 0, w, h);
 
-            // Stars (precomputed) - draw with a single shared brush to reduce allocations
             for (int i = 0; i < _menuStars.Length; i++)
             {
                 var s = _menuStars[i];
@@ -372,13 +311,10 @@ namespace WinFormsApp1.Views
                 g.FillEllipse(sb, s.X % w - s.Size / 2, s.Y % h - s.Size / 2, s.Size, s.Size);
             }
 
-            // Title
             var tf = _fImpact54;
             const string title = "PLUNGER DASH";
-            // Drop shadow
             using (var shadow = new SolidBrush(Color.FromArgb(100, 255, 140, 0)))
                 g.DrawString(title, tf, shadow, cx, 88 + 3, _centerFormat);
-            // Fill title (use solid brush to avoid GDI issues with gradient brushes in some environments)
             using (var fill = new SolidBrush(Color.FromArgb(255, 255, 230, 80)))
                 g.DrawString(title, tf, fill, cx, 88, _centerFormat);
             DrawCentred(g, "Grapple  •  Swing  •  Collect",
@@ -428,14 +364,10 @@ namespace WinFormsApp1.Views
             }
         }
 
-        // ═════════════════════════════════════════════════════════════════════
-        // ANIMATION — purely presentation logic, reads Sucker state
-        // ═════════════════════════════════════════════════════════════════════
         private void StepAnimation()
         {
             if (_player == null) return;
 
-            // Somersault trigger from model
             if (_player.SomersaultThisFrame)
             {
                 _player.ConsumeSomersault();
@@ -445,14 +377,11 @@ namespace WinFormsApp1.Views
 
             if (_isSomersaulting)
             {
-                // Finish somersault when last frame fully played
                 if (_animCol >= SomersaultFrames - 1 && _frameTimer >= FrameDelay)
                     _isSomersaulting = false;
-                // Still advance timer below
             }
             else
             {
-                // Map physics state → animation row
                 switch (_player.Condition)
                 {
                     case Condition.Run:
@@ -463,7 +392,6 @@ namespace WinFormsApp1.Views
                     case Condition.Attached:
                         if (_animRow != RowGrapple)
                         { _animRow = RowGrapple; _animCol = 0; _frameTimer = 0; }
-                        // Grapple col driven by aim angle — not looping
                         _animCol = AimToGrappleCol(_player.AimAngle);
                         break;
 
@@ -474,12 +402,11 @@ namespace WinFormsApp1.Views
                 }
             }
 
-            // Advance frame timer for looping rows
             _frameTimer++;
             if (_frameTimer > FrameDelay)
             {
                 _frameTimer = 0;
-                if (_animRow != RowGrapple)  // grapple col is angle-driven
+                if (_animRow != RowGrapple)
                 {
                     int maxF = _animRow switch
                     {
@@ -492,24 +419,17 @@ namespace WinFormsApp1.Views
                 }
             }
 
-            // Coin animation (independent)
             _coinTimer++;
             if (_coinTimer > 4) { _coinFrame = (_coinFrame + 1) % CoinCols; _coinTimer = 0; }
         }
 
         private static int AimToGrappleCol(double angle)
         {
-            // angle: -90 = up, 0 = forward, +85 = down
-            // Map to 4 frames: 0=up, 1=45° up-forward, 2=forward, 3=downward
             if (angle <= -65) return 0;
             if (angle <= -25) return 1;
             if (angle <= 25) return 2;
             return 3;
         }
-
-        // ═════════════════════════════════════════════════════════════════════
-        // GAME RENDERING — all world coordinates offset by -scrollX
-        // ═════════════════════════════════════════════════════════════════════
 
         private void DrawTiles(Graphics g, int scrollX)
         {
@@ -518,10 +438,8 @@ namespace WinFormsApp1.Views
             foreach (var tile in _level.Tiles)
             {
                 var wb = tile.GetBounds();
-                // Screen-space rectangle
                 var sr = new Rectangle(wb.Left - scrollX, wb.Top, wb.Width, wb.Height);
 
-                // Cull tiles outside the viewport
                 if (sr.Right < 0 || sr.Left > ClientSize.Width) continue;
 
                 switch (tile.Type)
@@ -539,18 +457,14 @@ namespace WinFormsApp1.Views
                     case TileType.Platform:
                         DrawPlatformTile(g, sr);
                         break;
-                        // TileType.Platform: levels no longer use platforms; kept in model only
                 }
             }
         }
 
         private static void DrawGroundTile(Graphics g, Rectangle sr)
         {
-            // Use cached brushes/pens to avoid per-tile allocations
             g.FillRectangle(_groundBrush, sr.X, sr.Y, sr.Width, sr.Height);
-            // Grass top strip
             g.FillRectangle(_grassBrush, sr.X, sr.Y, sr.Width, 5);
-            // Brick grid - reuse cached pen
             for (int bx = sr.X; bx < sr.Right; bx += 32)
                 g.DrawLine(_gridPen, bx, sr.Y, bx, sr.Bottom);
             g.DrawRectangle(_groundBorder, sr.X, sr.Y, sr.Width, sr.Height);
@@ -559,7 +473,6 @@ namespace WinFormsApp1.Views
         private static void DrawCeilingTile(Graphics g, Rectangle sr)
         {
             g.FillRectangle(_ceilingBrush, sr.X, sr.Y, sr.Width, sr.Height);
-            // Stone bottom strip
             g.FillRectangle(_ceilingStone, sr.X, sr.Bottom - 5, sr.Width, 5);
             for (int bx = sr.X; bx < sr.Right; bx += 48)
                 g.DrawLine(_ceilingGrid, bx, sr.Y, bx, sr.Bottom);
@@ -569,7 +482,6 @@ namespace WinFormsApp1.Views
         {
             g.FillRectangle(_wallBrush, sr.X, sr.Y, sr.Width, sr.Height);
             g.DrawLine(_wallHigh, sr.X + 1, sr.Y, sr.X + 1, sr.Bottom);
-            // Horizontal mortar lines
             for (int by = sr.Y; by < sr.Bottom; by += 20)
                 g.DrawLine(_gridPen, sr.X, by, sr.Right, by);
             g.DrawRectangle(_platformBorder, sr.X, sr.Y, sr.Width, sr.Height);
@@ -578,9 +490,7 @@ namespace WinFormsApp1.Views
         private static void DrawPlatformTile(Graphics g, Rectangle sr)
         {
             g.FillRectangle(_groundBrush, sr.X, sr.Y, sr.Width, sr.Height);
-            // Highlight top edge
             g.DrawLine(_wallHigh, sr.X, sr.Y + 1, sr.Right, sr.Y + 1);
-            // Brick marks
             for (int bx = sr.X + 20; bx < sr.Right; bx += 20)
                 g.DrawLine(_gridPen, bx, sr.Y, bx, sr.Bottom);
             g.DrawRectangle(_platformBorder, sr.X, sr.Y, sr.Width, sr.Height);
@@ -625,13 +535,11 @@ namespace WinFormsApp1.Views
                             || _player.Condition == Condition.Attached;
             if (!ropeVisible) return;
 
-            // Screen-space endpoints
             int pcx = _player.Location.X - scrollX + PCX;
             int pcy = _player.Location.Y + PCY;
             int hx = _player.Projectile.Location.X - scrollX;
             int hy = _player.Projectile.Location.Y;
 
-            // Rope line with slight thickness
             using (var rope = new Pen(Color.FromArgb(210, 140, 90, 40), 3f))
             {
                 rope.StartCap = LineCap.Round;
@@ -639,7 +547,6 @@ namespace WinFormsApp1.Views
                 g.DrawLine(rope, pcx, pcy, hx, hy);
             }
 
-            // Plunger head
             if (Resources.vantus != null)
             {
                 int vw = Resources.vantus.Width / VantusCols;
@@ -664,7 +571,6 @@ namespace WinFormsApp1.Views
             if (!_player.EnableGrapple) return;
             if (_player.Projectile.IsActive || _player.Condition == Condition.Attached) return;
 
-            // Player center in screen space
             float sx = _player.Location.X - scrollX + PCX;
             float sy = _player.Location.Y + PCY;
 
@@ -672,34 +578,28 @@ namespace WinFormsApp1.Views
             float dx = (float)Math.Cos(rad);
             float dy = (float)Math.Sin(rad);
 
-            // Trace ray to world bounds — ceiling / floor in world Y
             float ceilY = LevelBuilder.CeilBot;
             float floorY = LevelBuilder.FloorTop;
 
-            // Find intersection with horizontal bounds
             float maxLen = 1600f;
             float tx = sx + dx * maxLen;
             float ty = sy + dy * maxLen;
 
-            // Clamp to ceiling (dy < 0 means going up)
             if (dy < 0 && ty < ceilY)
             {
                 float t = (ceilY - sy) / dy;
                 tx = sx + dx * t; ty = ceilY;
             }
-            // Clamp to floor (dy > 0 means going down)
             else if (dy > 0 && ty > floorY && _player.CanGrappleGround)
             {
                 float t = (floorY - sy) / dy;
                 tx = sx + dx * t; ty = floorY;
             }
 
-            // Dashed laser beam
             using (var lp = new Pen(Color.FromArgb(180, 100, 255, 100), 1.8f)
             { DashStyle = DashStyle.Dash })
                 g.DrawLine(lp, sx, sy, tx, ty);
 
-            // Arrow indicator (small, near player)
             float al = 20f;
             float aa = (float)(Math.PI / 5.8);
             float bax = (float)rad;
@@ -711,7 +611,6 @@ namespace WinFormsApp1.Views
             using (var ab = new SolidBrush(Color.FromArgb(190, 255, 220, 50)))
                 g.FillPolygon(ab, new[] { tip, lpt, rpt });
 
-            // Target indicator at hit point
             bool hitsHorizontal = (ty <= ceilY + 3f) || (ty >= floorY - 3f);
             if (hitsHorizontal)
             {
@@ -737,11 +636,9 @@ namespace WinFormsApp1.Views
 
             if (Resources.digger == null)
             {
-                // Fallback: colored rectangle
                 using var fb = new SolidBrush(_player.IsDead ? Color.Red : Color.DodgerBlue);
                 if (_player.GravityScale < 0)
                 {
-                    // draw rotated upside-down
                     g.TranslateTransform(sx + PW / 2f, sy + PH / 2f);
                     g.RotateTransform(180);
                     g.FillRectangle(fb, -PW / 2f, -PH / 2f, PW, PH);
@@ -769,7 +666,6 @@ namespace WinFormsApp1.Views
 
             if (_player.GravityScale < 0)
             {
-                // rotate sprite 180 degrees around its center
                 g.TranslateTransform(sx + PW / 2f, sy + PH / 2f);
                 g.RotateTransform(180);
                 g.DrawImage(Resources.digger,
@@ -795,11 +691,9 @@ namespace WinFormsApp1.Views
             float prog = TotalCoins > 0
                 ? Math.Min(1f, (float)_score / TotalCoins) : 0f;
 
-            // Track
             using (var tr = new SolidBrush(Color.FromArgb(110, 0, 0, 0)))
                 g.FillRectangle(tr, barX, barY, barW, barH);
 
-            // Fill
             if (prog > 0)
             {
                 using var fill = new LinearGradientBrush(
@@ -809,16 +703,13 @@ namespace WinFormsApp1.Views
                 g.FillRectangle(fill, barX, barY, (int)(barW * prog), barH);
             }
 
-            // Border
             using (var bp = new Pen(Color.FromArgb(170, 255, 205, 82), 1.5f))
                 g.DrawRectangle(bp, barX, barY, barW, barH);
 
-            // Coin label
             using (var hf = new Font("Segoe UI", 13, FontStyle.Bold, GraphicsUnit.Pixel))
             using (var hb = new SolidBrush(Color.FromArgb(225, 255, 235, 82)))
                 g.DrawString($"  {_score} / {TotalCoins}", hf, hb, barX + 4, barY + barH + 2);
 
-            // Timer
             int secs = Math.Max(0, LevelTicksRemaining) / 60;
             using (var tf2 = new Font("Consolas", 13, FontStyle.Bold, GraphicsUnit.Pixel))
             using (var tb2 = new SolidBrush(secs <= 10 ? Color.OrangeRed
@@ -829,23 +720,17 @@ namespace WinFormsApp1.Views
                 g.DrawString(ts, tf2, tb2, w - tsz.Width - 12, barY + barH + 2);
             }
 
-            // Controls reminder (small, bottom-left)
             using (var cb2 = new SolidBrush(Color.FromArgb(80, 200, 200, 200)))
                 g.DrawString("[W] Hook   [A/D] Aim   [Space] Detach   [Esc] Menu",
                     _fSegoe11, cb2, 10, ClientSize.Height - 22);
         }
 
-        // ═════════════════════════════════════════════════════════════════════
-        // DEATH SCREEN
-        // ═════════════════════════════════════════════════════════════════════
         private void DrawDeath(Graphics g)
         {
             int w = ClientSize.Width, h = ClientSize.Height, cx = w / 2, cy2 = h / 2;
 
-            // Прокачиваем fade-in
             _overlayAlpha = Math.Min(1f, _overlayAlpha + FadeSpeed);
 
-            // Тёмный красноватый фон
             using (var bg = new SolidBrush(Color.FromArgb((int)(_overlayAlpha * 200), 60, 0, 0)))
                 g.FillRectangle(bg, 0, 0, w, h);
 
@@ -854,7 +739,6 @@ namespace WinFormsApp1.Views
             float a = Math.Min(1f, (_overlayAlpha - 0.3f) / 0.7f);
             int ia = (int)(a * 255);
 
-            // Большая надпись "ВЫ ПРОИГРАЛИ"
             using (var tf = new Font("Impact", 80, FontStyle.Regular, GraphicsUnit.Pixel))
             {
                 string txt = "ВЫ ПРОИГРАЛИ";
@@ -862,15 +746,12 @@ namespace WinFormsApp1.Views
                 float tx = cx - sz.Width / 2;
                 float ty = cy2 - sz.Height / 2 - 40;
 
-                // Красная тень
                 using (var sh = new SolidBrush(Color.FromArgb(ia, 180, 0, 0)))
                     g.DrawString(txt, tf, sh, tx + 4, ty + 4);
-                // Белый текст
                 using (var tb2 = new SolidBrush(Color.FromArgb(ia, 255, 220, 220)))
                     g.DrawString(txt, tf, tb2, tx, ty);
             }
 
-            // Подсказка снизу
             if (a > 0.6f)
             {
                 int ia2 = (int)(Math.Min(1f, (a - 0.6f) / 0.4f) * 220);
@@ -883,19 +764,15 @@ namespace WinFormsApp1.Views
                 }
             }
 
-            if (_overlayAlpha < 1f) Invalidate();  // продолжаем fade-in
+            if (_overlayAlpha < 1f) Invalidate();
         }
 
-        // ═════════════════════════════════════════════════════════════════════
-        // VICTORY SCREEN
-        // ═════════════════════════════════════════════════════════════════════
         private void DrawVictory(Graphics g)
         {
             int w = ClientSize.Width, h = ClientSize.Height, cx = w / 2, cy2 = h / 2;
 
             _overlayAlpha = Math.Min(1f, _overlayAlpha + FadeSpeed);
 
-            // Тёмный золотистый фон
             using (var bg = new SolidBrush(Color.FromArgb((int)(_overlayAlpha * 210), 30, 25, 0)))
                 g.FillRectangle(bg, 0, 0, w, h);
 
@@ -904,8 +781,6 @@ namespace WinFormsApp1.Views
             float a = Math.Min(1f, (_overlayAlpha - 0.25f) / 0.75f);
             int ia = (int)(a * 255);
 
-            // Звёздочки-конфетти (статичные но красивые)
-            // Stars (use cached RNG to avoid allocation)
             for (int i = 0; i < 60; i++)
             {
                 float sx = _rng.Next(w), sy = _rng.Next(h);
@@ -917,21 +792,17 @@ namespace WinFormsApp1.Views
                 g.FillEllipse(cb2, sx - sz / 2, sy - sz / 2, sz, sz);
             }
 
-            // "YOU WON!" — use cached fonts and centered drawing to avoid MeasureString
             string txt = "ВЫ ВЫИГРАЛИ!";
-            // move title upward to avoid overlapping statistics
-            float ty = cy2 - 120; // moved up
+            float ty = cy2 - 120;
             using (var sh = new SolidBrush(Color.FromArgb(ia, 120, 90, 0)))
                 g.DrawString(txt, _fImpact80, sh, cx + 4, ty + 4, _centerFormat);
             using (var fill = new SolidBrush(Color.FromArgb(ia, 255, 235, 80)))
                 g.DrawString(txt, _fImpact80, fill, cx, ty, _centerFormat);
 
-            // Счёт монет
             if (a > 0.4f)
             {
                 int ia2 = (int)(Math.Min(1f, (a - 0.4f) / 0.6f) * 255);
 
-                // Рейтинг звёздами
                 string rating = GetRating(_victoryCoins, _victoryTotal);
                 using (var rf = new Font("Impact", 36, FontStyle.Regular, GraphicsUnit.Pixel))
                 using (var rb = new SolidBrush(Color.FromArgb(ia2, 255, 220, 60)))
@@ -940,7 +811,6 @@ namespace WinFormsApp1.Views
                     g.DrawString(rating, rf, rb, cx - rsz.Width / 2, cy2 - 10);
                 }
 
-                // Монеты
                 string coinStr = $"Монет собрано: {_victoryCoins} / {_victoryTotal}";
                 using (var cf2 = new Font("Segoe UI", 22, FontStyle.Bold, GraphicsUnit.Pixel))
                 using (var cb3 = new SolidBrush(Color.FromArgb(ia2, 255, 240, 160)))
@@ -949,7 +819,6 @@ namespace WinFormsApp1.Views
                     g.DrawString(coinStr, cf2, cb3, cx - csz.Width / 2, cy2 + 45);
                 }
 
-                // Процент
                 float pct = _victoryTotal > 0 ? (float)_victoryCoins / _victoryTotal * 100f : 0;
                 string pctStr = $"{pct:F0}% завершения";
                 using (var pf = new Font("Segoe UI", 18, FontStyle.Italic, GraphicsUnit.Pixel))
@@ -959,7 +828,6 @@ namespace WinFormsApp1.Views
                     g.DrawString(pctStr, pf, pb2, cx - psz.Width / 2, cy2 + 80);
                 }
 
-                // Подсказка
                 if (a > 0.7f)
                 {
                     int ia3 = (int)(Math.Min(1f, (a - 0.7f) / 0.3f) * 180);
@@ -986,9 +854,6 @@ namespace WinFormsApp1.Views
             return "☆☆☆  ПОПРОБУЙ ЕЩЁ";
         }
 
-        // ═════════════════════════════════════════════════════════════════════
-        // Graphics helpers
-        // ═════════════════════════════════════════════════════════════════════
         private static Rectangle Rect(int x, int y, int w, int h)
             => new Rectangle(x, y, w, h);
 
@@ -996,7 +861,6 @@ namespace WinFormsApp1.Views
             => p.X >= r.X && p.X <= r.X + r.Width && p.Y >= r.Y && p.Y <= r.Y + r.Height;
     }
 
-    // ── Rounded-rectangle extension methods ───────────────────────────────────
     internal static class GfxExt
     {
         public static void FillRoundedRect(this Graphics g, Brush b,
