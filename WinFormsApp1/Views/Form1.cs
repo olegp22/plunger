@@ -79,6 +79,8 @@ namespace WinFormsApp1.Views
 
         private const int PW = 90, PH = 110;
         private const int PCX = PW / 2, PCY = PH / 2;
+        private const int MenuButtonW = 380;
+        private const int MenuButtonH = 84;
 
         private enum ScreenMode { Menu, Game, Death, Victory }
         private ScreenMode _screen = ScreenMode.Menu;
@@ -176,9 +178,9 @@ namespace WinFormsApp1.Views
         private int MenuHitTest(Point pt)
         {
             int cx = ClientSize.Width / 2;
-            if (Rect(cx - 150, 245, 300, 65).Contains(pt)) return 0;
-            if (Rect(cx - 150, 335, 300, 65).Contains(pt)) return 1;
-            if (Rect(cx - 150, 425, 300, 65).Contains(pt)) return 2;
+            if (Rect(cx - MenuButtonW / 2, 245, MenuButtonW, MenuButtonH).Contains(pt)) return 0;
+            if (Rect(cx - MenuButtonW / 2, 335, MenuButtonW, MenuButtonH).Contains(pt)) return 1;
+            if (Rect(cx - MenuButtonW / 2, 425, MenuButtonW, MenuButtonH).Contains(pt)) return 2;
             return -1;
         }
 
@@ -321,16 +323,16 @@ namespace WinFormsApp1.Views
                 _fSegoe15Italic,
                 Color.FromArgb(170, 200, 205, 255), cx, 158);
 
-            DrawCentred(g, "[W] Shoot hook     [A / D] Aim     [Space] Detach     [Esc] Menu",
+            DrawCentred(g, "[W] Выстрел крюком     [A/D] Прицел     [Пробел] Отцеп     [Esc] Меню",
                 _fSegoe13,
                 Color.FromArgb(130, 170, 255, 170), cx, 195);
 
-            DrawMenuButton(g, cx, 245, "LEVEL 1 — The Run",
-                "Ceiling & floor grapple  |  coin sprint", _menuHover == 0);
-            DrawMenuButton(g, cx, 335, "LEVEL 2 — Wall Climb",
-                "Walls, platforms & vertical climbing", _menuHover == 1);
-            DrawMenuButton(g, cx, 425, "LEVEL 3 — Gravity Flip",
-                "Invert gravity  |  survive by flipping", _menuHover == 2);
+            DrawMenuButton(g, cx, 245, "УРОВЕНЬ 1 — БЕГ",
+                "Цепляйся за потолок и пол  |  собери монеты", _menuHover == 0);
+            DrawMenuButton(g, cx, 335, "УРОВЕНЬ 2 — ВЗЛЁТ ПО СТЕНЕ",
+                "Стены, платформы и вертикальные подъёмы", _menuHover == 1);
+            DrawMenuButton(g, cx, 425, "УРОВЕНЬ 3 — ПЕРЕВОРОТ ГРАВИТАЦИИ",
+                "Инверсия гравитации  |  ЛКМ — переключение гравитации", _menuHover == 2);
 
             DrawCentred(g, "Click a level to begin",
                 _fSegoe11,
@@ -345,22 +347,22 @@ namespace WinFormsApp1.Views
 
         private void DrawMenuButton(Graphics g, int cx, int y, string label, string sub, bool hovered)
         {
-            const int bw = 310, bh = 66;
+            int bw = MenuButtonW, bh = MenuButtonH;
             int bx = cx - bw / 2;
 
             var bgCol = hovered ? Color.FromArgb(215, 45, 32, 85) : Color.FromArgb(150, 22, 14, 52);
             var brdCol = hovered ? Color.FromArgb(255, 255, 185, 0) : Color.FromArgb(170, 110, 85, 210);
 
-            using (var bb = new SolidBrush(bgCol)) g.FillRoundedRect(bb, bx, y, bw, bh, 13);
-            using (var bp = new Pen(brdCol, hovered ? 2.5f : 1.5f)) g.DrawRoundedRect(bp, bx, y, bw, bh, 13);
+            using (var bb = new SolidBrush(bgCol)) g.FillRoundedRect(bb, bx, y, bw, bh, 18);
+            using (var bp = new Pen(brdCol, hovered ? 3f : 2f)) g.DrawRoundedRect(bp, bx, y, bw, bh, 18);
 
             using (var lb = new SolidBrush(hovered ? Color.FromArgb(255, 255, 235, 80) : Color.White))
             {
-                g.DrawString(label, _fImpact21, lb, cx, y + 7, _centerFormat);
+                g.DrawString(label, _fImpact21, lb, cx, y + 12, _centerFormat);
             }
             using (var sb2 = new SolidBrush(Color.FromArgb(hovered ? 215 : 130, 180, 205, 255)))
             {
-                g.DrawString(sub, _fSegoe12Italic, sb2, cx, y + 37, _centerFormat);
+                g.DrawString(sub, _fSegoe12Italic, sb2, cx, y + 46, _centerFormat);
             }
         }
 
