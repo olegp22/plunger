@@ -1,6 +1,5 @@
 ﻿// ══════════════════════════════════════════════════════════════════════════════
 // ФАЙЛ НАСТРОЕК ИГРЫ
-// Меняй значения здесь — они применятся ко всей игре без изменения другого кода.
 // ══════════════════════════════════════════════════════════════════════════════
 namespace Plunger.Models
 {
@@ -12,11 +11,15 @@ namespace Plunger.Models
         public const double RunSpeedLevel1 = 15.0;
         // Уровень 2 — чуть быстрее для сложности
         public const double RunSpeedLevel2 = 20.0;
+        // Уровень 3 — средняя скорость (специальный уровень с инверсией гравитации)
+        public const double RunSpeedLevel3 = 20.0;
 
         // Начальная вертикальная скорость прыжка (px за тик). Отрицательное = вверх.
         // Позволяет задавать разную высоту прыжка для уровней.
         public const double JumpVYLevel1 = -100.0;
         public const double JumpVYLevel2 = -100.0;
+        // Прыжок для уровня 3 
+        public const double JumpVYLevel3 = -95.0;
 
         // Скорость притягивания присоской (px за тик)
         public const double PullSpeed = 50.0;
@@ -34,9 +37,11 @@ namespace Plunger.Models
         // Базовый автоскролл камеры (px за тик).
         // Чем больше — тем быстрее левая стена "догоняет" стоящего диггера.
         // Уровень 1
-        public const double CameraSpeedLevel1 = 2.5;
+        public const double CameraSpeedLevel1 = 5.5;
         // Уровень 2 — стена быстрее
-        public const double CameraSpeedLevel2 = 3.5;
+        public const double CameraSpeedLevel2 = 6.5;
+        // Уровень 3 — более агрессивный автоскролл
+        public const double CameraSpeedLevel3 = 7.5;
 
         // Если диггер далеко справа от этой X (в пикселях экрана) —
         // камера ускоряется чтобы не отстать
